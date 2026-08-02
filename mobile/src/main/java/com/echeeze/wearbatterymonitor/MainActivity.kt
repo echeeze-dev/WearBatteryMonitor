@@ -1,0 +1,299 @@
+package com.echeeze.wearbatterymonitor
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
+import com.google.android.gms.wearable.*
+import java.text.SimpleDateFormat
+import java.util.*
+
+class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener, DataClient.OnDataChangedListener {
+
+    private var batteryPercent by mutableStateOf(0)
+    private var isCharging by mutableStateOf(false)
+    private var watchPercent by mutableStateOf<Int?>(null)
+    private var watchIsCharging by mutableStateOf(false)
+    private var earphonePercent by mutableStateOf<Int?>(null)
+    private var earphoneL by mutableStateOf<Int?>(null)
+    private var earphoneR by mutableStateOf<Int?>(null)
+    private var earphoneCase by mutableStateOf<Int?>(null)
+    private var earphoneName by mutableStateOf<String?>(null)
+    private var isServiceRunning by mutableStateOf(false)
+
+    // In-memory history for now to fix startup crash
+    private val phoneHistory = mutableStateListOf<BatteryEntry>()
+    private val watchHistory = mutableStateListOf<BatteryEntry>()
+    private val earphoneHistory = mutableStateListOf<BatteryEntry>()
+
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_BATTERY_CHANGED -> {
+                    val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                    val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                    batteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
+                    isCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
+                    addHistory(phoneHistory, "phone", batteryPercent)
+                    if (!isServiceRunning) sendBatteryStatusToWear()
+                }
+                "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
+                    updateEarphoneState(intent)
+                    if (!isServiceRunning) sendBatteryStatusToWear()
+                }
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        val sharedPref = getPreferences(Context.MODE_PRIVATE)
+        isServiceRunning = sharedPref.getBoolean("service_running", false)
+        if (isServiceRunning) startBatteryService()
+
+        setContent {
+            WearBatteryMonitorTheme {
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    BatteryMonitorScreen(
+                        phonePercent = batteryPercent,
+                        phoneIsCharging = isCharging,
+                        phoneHistory = phoneHistory,
+                        watchPercent = watchPercent,
+                        watchIsCharging = watchIsCharging,
+                        watchHistory = watchHistory,
+                        earphonePercent = earphonePercent,
+                        earphoneL = earphoneL,
+                        earphoneR = earphoneR,
+                        earphoneCase = earphoneCase,
+                        earphoneName = earphoneName,
+                        earphoneHistory = earphoneHistory,
+                        isServiceRunning = isServiceRunning,
+                        onServiceToggle = { toggleService(it) },
+                        modifier = Modifier.padding(innerPadding)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int) {
+        list.add(BatteryEntry(type, percent, System.currentTimeMillis()))
+        if (list.size > 50) list.removeAt(0)
+    }
+
+    private fun updateEarphoneState(intent: Intent) {
+        val level = intent.getIntExtra("android.bluetooth.device.extra.BATTERY_LEVEL", -1)
+        val bL = intent.getIntExtra("android.bluetooth.device.extra.LEFT_BATTERY_LEVEL", -1)
+        val bR = intent.getIntExtra("android.bluetooth.device.extra.RIGHT_BATTERY_LEVEL", -1)
+        val bC = intent.getIntExtra("android.bluetooth.device.extra.CASE_BATTERY_LEVEL", -1)
+        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level) }
+        if (bL != -1) earphoneL = bL
+        if (bR != -1) earphoneR = bR
+        if (bC != -1) earphoneCase = bC
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, android.bluetooth.BluetoothDevice::class.java)
+                         else @Suppress("DEPRECATION") intent.getParcelableExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE)
+            earphoneName = device?.name
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Wearable.getDataClient(this).addListener(this)
+        Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
+            items.find { it.uri.path == "/watch_battery" }?.let { updateWatchState(DataMapItem.fromDataItem(it).dataMap) }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Wearable.getDataClient(this).removeListener(this)
+    }
+
+    override fun onDataChanged(dataEvents: DataEventBuffer) {
+        for (event in dataEvents) {
+            if (event.dataItem.uri.path == "/watch_battery") {
+                updateWatchState(DataMapItem.fromDataItem(event.dataItem).dataMap)
+            }
+        }
+    }
+
+    private fun updateWatchState(dataMap: com.google.android.gms.wearable.DataMap) {
+        watchPercent = dataMap.getInt("watch_percent")
+        watchIsCharging = dataMap.getBoolean("watch_is_charging")
+        addHistory(watchHistory, "watch", watchPercent ?: 0)
+    }
+
+    private fun toggleService(enabled: Boolean) {
+        if (enabled) {
+            val perms = mutableListOf<String>()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+            val missing = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+            if (missing.isNotEmpty()) { requestPermissions(missing.toTypedArray(), 101); return }
+            startBatteryService()
+        } else stopBatteryService()
+        isServiceRunning = enabled
+        getPreferences(Context.MODE_PRIVATE).edit().putBoolean("service_running", enabled).apply()
+    }
+
+    private fun startBatteryService() = ContextCompat.startForegroundService(this, Intent(this, BatteryMonitorService::class.java))
+    private fun stopBatteryService() = stopService(Intent(this, BatteryMonitorService::class.java))
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction("android.bluetooth.device.action.BATTERY_LEVEL_CHANGED")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(batteryReceiver, filter)
+        }
+        Wearable.getMessageClient(this).addListener(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        unregisterReceiver(batteryReceiver)
+        Wearable.getMessageClient(this).removeListener(this)
+    }
+
+    override fun onMessageReceived(messageEvent: com.google.android.gms.wearable.MessageEvent) {
+        if (messageEvent.path == "/request_battery_update") sendBatteryStatusToWear()
+    }
+
+    private fun sendBatteryStatusToWear() {
+        val putDataMapReq = PutDataMapRequest.create("/battery_status")
+        putDataMapReq.dataMap.putInt("battery_percent", batteryPercent)
+        putDataMapReq.dataMap.putBoolean("is_charging", isCharging)
+        earphonePercent?.let { putDataMapReq.dataMap.putInt("earphone_percent", it) }
+        earphoneL?.let { putDataMapReq.dataMap.putInt("earphone_l", it) }
+        earphoneR?.let { putDataMapReq.dataMap.putInt("earphone_r", it) }
+        earphoneCase?.let { putDataMapReq.dataMap.putInt("earphone_case", it) }
+        earphoneName?.let { putDataMapReq.dataMap.putString("earphone_name", it) }
+        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
+        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+        Wearable.getDataClient(this).putDataItem(putDataReq)
+    }
+}
+
+@Composable
+fun BatteryMonitorScreen(
+    phonePercent: Int, phoneIsCharging: Boolean, phoneHistory: List<BatteryEntry>,
+    watchPercent: Int?, watchIsCharging: Boolean, watchHistory: List<BatteryEntry>,
+    earphonePercent: Int?, earphoneL: Int?, earphoneR: Int?, earphoneCase: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
+    isServiceRunning: Boolean, onServiceToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val permsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
+        if (perms.values.all { it }) onServiceToggle(true) else Toast.makeText(context, "Permissions required", Toast.LENGTH_SHORT).show()
+    }
+
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        BatterySection("Smartphone", phonePercent, phoneIsCharging, phoneHistory)
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+        BatterySection("Smartwatch", watchPercent ?: 0, watchIsCharging, watchHistory, watchPercent == null)
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+        EarphoneSection(earphoneName, earphonePercent, earphoneL, earphoneR, earphoneCase, earphoneHistory)
+        
+        Spacer(modifier = Modifier.height(40.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Background Monitoring")
+            Spacer(modifier = Modifier.width(16.dp))
+            Switch(checked = isServiceRunning, onCheckedChange = { checked ->
+                if (checked) {
+                    val perms = mutableListOf<String>()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+                    val missing = perms.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                    if (missing.isNotEmpty()) permsLauncher.launch(missing.toTypedArray()) else onServiceToggle(true)
+                } else onServiceToggle(false)
+            })
+        }
+    }
+}
+
+@Composable
+fun BatterySection(title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
+        if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
+        Spacer(modifier = Modifier.height(16.dp))
+        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history) }
+    }
+}
+
+@Composable
+fun EarphoneSection(name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = name ?: "Earphones", style = MaterialTheme.typography.headlineSmall)
+        if (L != null || R != null || C != null) {
+            Row(modifier = Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                L?.let { BatterySubItem("Left", it) }
+                R?.let { BatterySubItem("Right", it) }
+                C?.let { BatterySubItem("Case", it) }
+            }
+        } else {
+            Text(text = if (percent != null) "$percent%" else "Disconnected", style = MaterialTheme.typography.displayLarge, color = if (percent == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
+        }
+        if (percent != null || L != null || R != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history) }
+        }
+    }
+}
+
+@Composable
+fun BatterySubItem(label: String, percent: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, style = MaterialTheme.typography.labelLarge)
+        Text(text = "$percent%", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun HistoryGraph(history: List<BatteryEntry>) {
+    if (history.isEmpty()) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val width = size.width; val height = size.height; val path = Path()
+        val data = history.takeLast(50)
+        data.forEachIndexed { index, entry ->
+            val x = index * (width / (data.size - 1).coerceAtLeast(1))
+            val y = height - (entry.percent / 100f * height)
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, Color(0xFF6200EE), style = Stroke(width = 2.dp.toPx()))
+    }
+}
