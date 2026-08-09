@@ -32,8 +32,6 @@ import androidx.core.content.ContextCompat
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
-import java.text.SimpleDateFormat
-import java.util.*
 
 class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener, DataClient.OnDataChangedListener {
 
@@ -47,6 +45,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var earphoneCase by mutableStateOf<Int?>(null)
     private var earphoneName by mutableStateOf<String?>(null)
     private var isServiceRunning by mutableStateOf(false)
+    private var graphRangeHours by mutableStateOf(1)
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -75,8 +74,9 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val sharedPref = getPreferences(Context.MODE_PRIVATE)
+        val sharedPref = getPreferences(MODE_PRIVATE)
         isServiceRunning = sharedPref.getBoolean("service_running", false)
+        graphRangeHours = sharedPref.getInt("graph_range_hours", 1)
         if (isServiceRunning) startBatteryService()
 
         setContent {
@@ -97,6 +97,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                         earphoneHistory = earphoneHistory,
                         isServiceRunning = isServiceRunning,
                         onServiceToggle = { toggleService(it) },
+                        graphRangeHours = graphRangeHours,
+                        onGraphRangeChange = { updateGraphRange(it) },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -104,9 +106,23 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         }
     }
 
+    private fun updateGraphRange(hours: Int) {
+        graphRangeHours = hours
+        getPreferences(MODE_PRIVATE).edit().putInt("graph_range_hours", hours).apply()
+        sendGraphRangeToWear(hours)
+    }
+
+    private fun sendGraphRangeToWear(hours: Int) {
+        val putDataMapReq = PutDataMapRequest.create("/settings/graph_range")
+        putDataMapReq.dataMap.putInt("range_hours", hours)
+        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
+        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+        Wearable.getDataClient(this).putDataItem(putDataReq)
+    }
+
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int) {
         list.add(BatteryEntry(type, percent, System.currentTimeMillis()))
-        if (list.size > 50) list.removeAt(0)
+        if (list.size > 500) list.removeAt(0)
     }
 
     private fun updateEarphoneState(intent: Intent) {
@@ -131,6 +147,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
             items.find { it.uri.path == "/watch_battery" }?.let { updateWatchState(DataMapItem.fromDataItem(it).dataMap) }
         }
+        sendGraphRangeToWear(graphRangeHours)
     }
 
     override fun onPause() {
@@ -146,7 +163,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         }
     }
 
-    private fun updateWatchState(dataMap: com.google.android.gms.wearable.DataMap) {
+    private fun updateWatchState(dataMap: DataMap) {
         watchPercent = dataMap.getInt("watch_percent")
         watchIsCharging = dataMap.getBoolean("watch_is_charging")
         addHistory(watchHistory, "watch", watchPercent ?: 0)
@@ -162,7 +179,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             startBatteryService()
         } else stopBatteryService()
         isServiceRunning = enabled
-        getPreferences(Context.MODE_PRIVATE).edit().putBoolean("service_running", enabled).apply()
+        getPreferences(MODE_PRIVATE).edit().putBoolean("service_running", enabled).apply()
     }
 
     private fun startBatteryService() = ContextCompat.startForegroundService(this, Intent(this, BatteryMonitorService::class.java))
@@ -175,7 +192,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             addAction("android.bluetooth.device.action.BATTERY_LEVEL_CHANGED")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(batteryReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(batteryReceiver, filter)
         }
@@ -188,7 +205,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getMessageClient(this).removeListener(this)
     }
 
-    override fun onMessageReceived(messageEvent: com.google.android.gms.wearable.MessageEvent) {
+    override fun onMessageReceived(messageEvent: MessageEvent) {
         if (messageEvent.path == "/request_battery_update") sendBatteryStatusToWear()
     }
 
@@ -213,6 +230,7 @@ fun BatteryMonitorScreen(
     watchPercent: Int?, watchIsCharging: Boolean, watchHistory: List<BatteryEntry>,
     earphonePercent: Int?, earphoneL: Int?, earphoneR: Int?, earphoneCase: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
     isServiceRunning: Boolean, onServiceToggle: (Boolean) -> Unit,
+    graphRangeHours: Int, onGraphRangeChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -221,11 +239,14 @@ fun BatteryMonitorScreen(
     }
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        BatterySection("Smartphone", phonePercent, phoneIsCharging, phoneHistory)
+        GraphRangeSelector(graphRangeHours, onGraphRangeChange)
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        BatterySection("Smartphone", phonePercent, phoneIsCharging, phoneHistory, rangeHours = graphRangeHours)
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        BatterySection("Smartwatch", watchPercent ?: 0, watchIsCharging, watchHistory, watchPercent == null)
+        BatterySection("Smartwatch", watchPercent ?: 0, watchIsCharging, watchHistory, watchPercent == null, rangeHours = graphRangeHours)
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        EarphoneSection(earphoneName, earphonePercent, earphoneL, earphoneR, earphoneCase, earphoneHistory)
+        EarphoneSection(earphoneName, earphonePercent, earphoneL, earphoneR, earphoneCase, earphoneHistory, rangeHours = graphRangeHours)
         
         Spacer(modifier = Modifier.height(40.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -245,18 +266,32 @@ fun BatteryMonitorScreen(
 }
 
 @Composable
-fun BatterySection(title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false) {
+fun GraphRangeSelector(selectedHours: Int, onRangeChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Graph Range:", style = MaterialTheme.typography.labelLarge)
+        listOf(1, 6, 12).forEach { hours ->
+            FilterChip(
+                selected = selectedHours == hours,
+                onClick = { onRangeChange(hours) },
+                label = { Text("${hours}h") }
+            )
+        }
+    }
+}
+
+@Composable
+fun BatterySection(title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false, rangeHours: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = title, style = MaterialTheme.typography.headlineSmall)
         Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(16.dp))
-        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history) }
+        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history, rangeHours) }
     }
 }
 
 @Composable
-fun EarphoneSection(name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>) {
+fun EarphoneSection(name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>, rangeHours: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = name ?: "Earphones", style = MaterialTheme.typography.headlineSmall)
         if (L != null || R != null || C != null) {
@@ -270,7 +305,7 @@ fun EarphoneSection(name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, his
         }
         if (percent != null || L != null || R != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history) }
+            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history, rangeHours) }
         }
     }
 }
@@ -284,13 +319,19 @@ fun BatterySubItem(label: String, percent: Int) {
 }
 
 @Composable
-fun HistoryGraph(history: List<BatteryEntry>) {
+fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
     if (history.isEmpty()) return
+    val now = System.currentTimeMillis()
+    val startTime = now - (rangeHours * 3600000L)
+    val data = history.filter { it.timestamp >= startTime }
+    if (data.isEmpty()) return
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height; val path = Path()
-        val data = history.takeLast(50)
+        val duration = now - startTime
+        
         data.forEachIndexed { index, entry ->
-            val x = index * (width / (data.size - 1).coerceAtLeast(1))
+            val x = (entry.timestamp - startTime).toFloat() / duration * width
             val y = height - (entry.percent / 100f * height)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }

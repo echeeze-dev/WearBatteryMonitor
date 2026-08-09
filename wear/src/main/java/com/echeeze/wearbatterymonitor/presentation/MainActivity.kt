@@ -15,7 +15,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,9 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.*
@@ -61,6 +58,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     private var connectionState by mutableStateOf<ConnectionState>(ConnectionState.Initializing)
     private var watchBatteryPercent by mutableStateOf(0)
     private var watchIsCharging by mutableStateOf(false)
+    private var graphRangeHours by mutableStateOf(1)
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -76,7 +74,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         super.onCreate(savedInstanceState)
         updateWatchBattery()
         setContent {
-            WearApp(connectionState, watchBatteryPercent, watchIsCharging, phoneHistory, earphoneHistory, watchHistory)
+            WearApp(connectionState, watchBatteryPercent, watchIsCharging, phoneHistory, earphoneHistory, watchHistory, graphRangeHours)
         }
     }
 
@@ -86,7 +84,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         Wearable.getCapabilityClient(this).addListener(this, "battery_monitor_phone_app")
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(watchBatteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(watchBatteryReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(watchBatteryReceiver, filter)
         }
@@ -113,7 +111,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int) {
         list.add(BatteryEntry(type, percent, System.currentTimeMillis()))
-        if (list.size > 50) list.removeAt(0)
+        if (list.size > 500) list.removeAt(0)
     }
 
     private fun sendWatchBatteryToPhone() {
@@ -140,7 +138,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        dataEvents.forEach { event -> if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/battery_status") updateStateFromDataMap(DataMapItem.fromDataItem(event.dataItem).dataMap, true) }
+        dataEvents.forEach { event ->
+            if (event.type == DataEvent.TYPE_CHANGED) {
+                when (event.dataItem.uri.path) {
+                    "/battery_status" -> updateStateFromDataMap(DataMapItem.fromDataItem(event.dataItem).dataMap, true)
+                    "/settings/graph_range" -> graphRangeHours = DataMapItem.fromDataItem(event.dataItem).dataMap.getInt("range_hours", 1)
+                }
+            }
+        }
     }
 
     private fun updateStateFromDataMap(dataMap: DataMap, isOnline: Boolean) {
@@ -159,7 +164,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
 }
 
 @Composable
-fun WearApp(state: ConnectionState, watchPercent: Int, watchCharging: Boolean, phoneHistory: List<BatteryEntry>, earphoneHistory: List<BatteryEntry>, watchHistory: List<BatteryEntry>) {
+fun WearApp(state: ConnectionState, watchPercent: Int, watchCharging: Boolean, phoneHistory: List<BatteryEntry>, earphoneHistory: List<BatteryEntry>, watchHistory: List<BatteryEntry>, rangeHours: Int) {
     WearBatteryMonitorTheme {
         AppScaffold {
             val listState = rememberScalingLazyListState()
@@ -174,19 +179,19 @@ fun WearApp(state: ConnectionState, watchPercent: Int, watchCharging: Boolean, p
                     item { Spacer(modifier = Modifier.height(24.dp)) }
                     item {
                         when (state) {
-                            is ConnectionState.Active -> BatteryCard(state.percent, state.isCharging, state.timestamp, false, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight)
-                            is ConnectionState.Offline -> BatteryCard(state.percent, state.isCharging, state.timestamp, true, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight)
-                            else -> BatteryCard(0, false, 0L, true, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight)
+                            is ConnectionState.Active -> BatteryCard(state.percent, state.isCharging, state.timestamp, false, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight, rangeHours)
+                            is ConnectionState.Offline -> BatteryCard(state.percent, state.isCharging, state.timestamp, true, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight, rangeHours)
+                            else -> BatteryCard(0, false, 0L, true, "Phone", Icons.Default.Smartphone, phoneHistory, screenHeight, rangeHours)
                         }
                     }
+                    item { BatteryCard(watchPercent, watchCharging, System.currentTimeMillis(), false, "Watch", Icons.Default.Watch, watchHistory, screenHeight, rangeHours) }
                     item {
                         when (state) {
-                            is ConnectionState.Active -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, false, earphoneHistory, screenHeight)
-                            is ConnectionState.Offline -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, true, earphoneHistory, screenHeight)
-                            else -> EarphoneCard(null, null, null, null, null, 0L, true, earphoneHistory, screenHeight)
+                            is ConnectionState.Active -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, false, earphoneHistory, screenHeight, rangeHours)
+                            is ConnectionState.Offline -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, true, earphoneHistory, screenHeight, rangeHours)
+                            else -> EarphoneCard(null, null, null, null, null, 0L, true, earphoneHistory, screenHeight, rangeHours)
                         }
                     }
-                    item { BatteryCard(watchPercent, watchCharging, System.currentTimeMillis(), false, "Watch", Icons.Default.Watch, watchHistory, screenHeight) }
                     item {
                         when (state) {
                             is ConnectionState.Disconnected -> Text("Disconnected", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
@@ -204,7 +209,7 @@ fun WearApp(state: ConnectionState, watchPercent: Int, watchCharging: Boolean, p
 }
 
 @Composable
-fun BatteryCard(percent: Int, isCharging: Boolean, timestamp: Long, isOffline: Boolean, label: String, icon: ImageVector, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp) {
+fun BatteryCard(percent: Int, isCharging: Boolean, timestamp: Long, isOffline: Boolean, label: String, icon: ImageVector, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp, rangeHours: Int) {
     Column(modifier = Modifier.fillMaxWidth().height(screenHeight * 0.85f).padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainer), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary)
@@ -216,14 +221,14 @@ fun BatteryCard(percent: Int, isCharging: Boolean, timestamp: Long, isOffline: B
             if (isCharging) { Spacer(modifier = Modifier.width(4.dp)); Icon(imageVector = Icons.Default.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(24.dp), tint = if (isOffline) Color.Gray else Color.Green) }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Box(modifier = Modifier.height(40.dp).fillMaxWidth(0.8f)) { HistoryGraphFixed(history, isOffline) }
+        Box(modifier = Modifier.height(40.dp).fillMaxWidth(0.8f)) { HistoryGraphFixed(history, isOffline, rangeHours) }
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = if (timestamp > 0) formatRelativeTime(timestamp) else "--", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
     }
 }
 
 @Composable
-fun EarphoneCard(ep: Int?, L: Int?, R: Int?, C: Int?, name: String?, timestamp: Long, isOffline: Boolean, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp) {
+fun EarphoneCard(ep: Int?, L: Int?, R: Int?, C: Int?, name: String?, timestamp: Long, isOffline: Boolean, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp, rangeHours: Int) {
     Column(modifier = Modifier.fillMaxWidth().height(screenHeight * 0.85f).padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainer), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = Icons.Default.Headset, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary)
@@ -241,7 +246,7 @@ fun EarphoneCard(ep: Int?, L: Int?, R: Int?, C: Int?, name: String?, timestamp: 
             Text(text = if (ep != null) "$ep%" else "---", style = MaterialTheme.typography.displaySmall, color = Color.Gray)
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Box(modifier = Modifier.height(40.dp).fillMaxWidth(0.8f)) { HistoryGraphFixed(history, isOffline) }
+        Box(modifier = Modifier.height(40.dp).fillMaxWidth(0.8f)) { HistoryGraphFixed(history, isOffline, rangeHours) }
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = if (timestamp > 0) formatRelativeTime(timestamp) else "--", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
     }
@@ -256,14 +261,20 @@ fun SmallBatteryItemFixed(label: String, percent: Int, isOffline: Boolean) {
 }
 
 @Composable
-fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean) {
+fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHours: Int) {
     if (history.isEmpty()) return
+    val now = System.currentTimeMillis()
+    val startTime = now - (rangeHours * 3600000L)
+    val data = history.filter { it.timestamp >= startTime }
+    if (data.isEmpty()) return
+
     val color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height; val path = Path()
-        val data = history.takeLast(50)
+        val duration = now - startTime
+        
         data.forEachIndexed { index, entry ->
-            val x = index * (width / (data.size - 1).coerceAtLeast(1))
+            val x = (entry.timestamp - startTime).toFloat() / duration * width
             val y = height - (entry.percent / 100f * height)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
@@ -285,5 +296,5 @@ private fun formatRelativeTime(timestamp: Long): String {
 @WearPreviewFontScales
 @Composable
 fun DefaultPreview() {
-    WearApp(ConnectionState.Active(75, true, System.currentTimeMillis(), 80, 70, 70, 100, "My Buds"), 90, false, emptyList(), emptyList(), emptyList())
+    WearApp(ConnectionState.Active(75, true, System.currentTimeMillis(), 80, 70, 70, 100, "My Buds"), 90, false, emptyList(), emptyList(), emptyList(), 1)
 }
