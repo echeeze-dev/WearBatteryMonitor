@@ -12,7 +12,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
         <service
-            android:name=".complication.MainComplicationService"
+            android:name="com.echeeze.wearbatterymonitor.complication.MainComplicationService"
             android:exported="true"
             android:label="@string/complication_label"
             android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
@@ -28,17 +28,23 @@
                 android:value="3600" />
         </service>
         <service
-            android:name=".tile.MainTileService"
+            android:name="com.echeeze.wearbatterymonitor.tile.MainTileService"
             android:exported="true"
-            android:label="@string/tile_label"
+            android:label="Battery Monitor"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
+        </service>
 
-            <meta-data
-                android:name="androidx.wear.tiles.PREVIEW"
-                android:resource="@drawable/tile_preview" />
+        <service
+            android:name="com.echeeze.wearbatterymonitor.tile.TileDataUpdateService"
+            android:exported="true"
+            android:permission="com.google.android.gms.wearable.BIND_LISTENER">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/battery_status" />
+            </intent-filter>
         </service>
 
         <uses-library

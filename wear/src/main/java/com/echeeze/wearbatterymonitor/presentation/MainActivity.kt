@@ -25,8 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
@@ -105,12 +103,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         watchBatteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
         watchIsCharging = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-        addHistory(watchHistory, "watch", watchBatteryPercent)
+        addHistory(watchHistory, "watch", watchBatteryPercent, watchIsCharging)
         sendWatchBatteryToPhone()
     }
 
-    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int) {
-        list.add(BatteryEntry(type, percent, System.currentTimeMillis()))
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean = false) {
+        list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
         if (list.size > 500) list.removeAt(0)
     }
 
@@ -156,8 +154,32 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         val eC = if (dataMap.containsKey("earphone_case")) dataMap.getInt("earphone_case") else null
         val en = dataMap.getString("earphone_name")
         connectionState = if (isOnline) ConnectionState.Active(p, c, t, ep, eL, eR, eC, en) else ConnectionState.Offline(p, c, t, ep, eL, eR, eC, en)
-        addHistory(phoneHistory, "phone", p)
-        ep?.let { addHistory(earphoneHistory, "earphone", it) }
+        
+        // Sync history if available in the dataMap
+        if (dataMap.containsKey("phone_history")) {
+            syncHistoryFromDataMap(phoneHistory, dataMap.getDataMapArrayList("phone_history")!!, "phone")
+        } else {
+            addHistory(phoneHistory, "phone", p, c)
+        }
+        
+        if (dataMap.containsKey("watch_history")) {
+            syncHistoryFromDataMap(watchHistory, dataMap.getDataMapArrayList("watch_history")!!, "watch")
+        } else {
+            addHistory(watchHistory, "watch", watchBatteryPercent, watchIsCharging)
+        }
+        
+        if (dataMap.containsKey("earphone_history")) {
+            syncHistoryFromDataMap(earphoneHistory, dataMap.getDataMapArrayList("earphone_history")!!, "earphone")
+        } else {
+            ep?.let { addHistory(earphoneHistory, "earphone", it, false) }
+        }
+    }
+
+    private fun syncHistoryFromDataMap(list: MutableList<BatteryEntry>, dataList: ArrayList<DataMap>, type: String) {
+        list.clear()
+        dataList.forEach { dm ->
+            list.add(BatteryEntry(type, dm.getInt("p"), dm.getLong("t"), dm.getBoolean("c")))
+        }
     }
 
     override fun onCapabilityChanged(info: CapabilityInfo) { checkStatus() }
@@ -268,17 +290,25 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
     val data = history.filter { it.timestamp >= startTime }
     if (data.isEmpty()) return
 
-    val color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary
+    val normalColor = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary
+    val chargingColor = if (isOffline) Color.Gray else Color.Green
+
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val width = size.width; val height = size.height; val path = Path()
+        val width = size.width; val height = size.height
         val duration = now - startTime
+        val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(0.5.dp.toPx(), 4.dp.toPx())
         
-        data.forEachIndexed { index, entry ->
+        data.forEach { entry ->
             val x = (entry.timestamp - startTime).toFloat() / duration * width
-            val y = height - (entry.percent / 100f * height)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            val barHeight = entry.percent / 100f * height
+            val color = if (entry.isCharging) chargingColor else normalColor
+            
+            drawRect(
+                color = color,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+            )
         }
-        drawPath(path, color, style = Stroke(width = 2.dp.toPx()))
     }
 }
 

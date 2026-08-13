@@ -1,13 +1,16 @@
 package com.echeeze.wearbatterymonitor
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,8 +26,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,37 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private val watchHistory = mutableStateListOf<BatteryEntry>()
     private val earphoneHistory = mutableStateListOf<BatteryEntry>()
 
+    private var batteryMonitorService: BatteryMonitorService? by mutableStateOf(null)
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as BatteryMonitorService.LocalBinder
+            batteryMonitorService = binder.getService()
+            // Sync initial history from service
+            syncHistoryFromService()
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            batteryMonitorService = null
+        }
+    }
+
+    private fun syncHistoryFromService() {
+        batteryMonitorService?.let { service ->
+            phoneHistory.clear(); phoneHistory.addAll(service.phoneHistory)
+            watchHistory.clear(); watchHistory.addAll(service.watchHistory)
+            earphoneHistory.clear(); earphoneHistory.addAll(service.earphoneHistory)
+            
+            // Also sync current states
+            batteryPercent = service.currentPhonePercent
+            isCharging = service.currentPhoneCharging
+            earphonePercent = service.currentEarphonePercent
+            earphoneL = service.currentEarphoneL
+            earphoneR = service.currentEarphoneR
+            earphoneCase = service.currentEarphoneCase
+            earphoneName = service.currentEarphoneName
+        }
+    }
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -60,7 +92,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                     val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                     batteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     isCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-                    addHistory(phoneHistory, "phone", batteryPercent)
+                    addHistory(phoneHistory, "phone", batteryPercent, isCharging)
                     if (!isServiceRunning) sendBatteryStatusToWear()
                 }
                 "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
@@ -77,7 +109,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         val sharedPref = getPreferences(MODE_PRIVATE)
         isServiceRunning = sharedPref.getBoolean("service_running", false)
         graphRangeHours = sharedPref.getInt("graph_range_hours", 1)
-        if (isServiceRunning) startBatteryService()
+        if (isServiceRunning) {
+            startBatteryService()
+            bindService(Intent(this, BatteryMonitorService::class.java), serviceConnection, BIND_AUTO_CREATE)
+        }
 
         setContent {
             WearBatteryMonitorTheme {
@@ -120,9 +155,15 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).putDataItem(putDataReq)
     }
 
-    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int) {
-        list.add(BatteryEntry(type, percent, System.currentTimeMillis()))
-        if (list.size > 500) list.removeAt(0)
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean) {
+        // If service is running, it handles history. Only add here if NOT running.
+        if (!isServiceRunning) {
+            list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
+            if (list.size > 500) list.removeAt(0)
+        } else {
+            // If running, we sync from service periodically or on demand
+            syncHistoryFromService()
+        }
     }
 
     private fun updateEarphoneState(intent: Intent) {
@@ -130,7 +171,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         val bL = intent.getIntExtra("android.bluetooth.device.extra.LEFT_BATTERY_LEVEL", -1)
         val bR = intent.getIntExtra("android.bluetooth.device.extra.RIGHT_BATTERY_LEVEL", -1)
         val bC = intent.getIntExtra("android.bluetooth.device.extra.CASE_BATTERY_LEVEL", -1)
-        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level) }
+        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level, false) }
         if (bL != -1) earphoneL = bL
         if (bR != -1) earphoneR = bR
         if (bC != -1) earphoneCase = bC
@@ -159,6 +200,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         for (event in dataEvents) {
             if (event.dataItem.uri.path == "/watch_battery") {
                 updateWatchState(DataMapItem.fromDataItem(event.dataItem).dataMap)
+                if (isServiceRunning) syncHistoryFromService()
             }
         }
     }
@@ -166,7 +208,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private fun updateWatchState(dataMap: DataMap) {
         watchPercent = dataMap.getInt("watch_percent")
         watchIsCharging = dataMap.getBoolean("watch_is_charging")
-        addHistory(watchHistory, "watch", watchPercent ?: 0)
+        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging)
     }
 
     private fun toggleService(enabled: Boolean) {
@@ -177,13 +219,25 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             val missing = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
             if (missing.isNotEmpty()) { requestPermissions(missing.toTypedArray(), 101); return }
             startBatteryService()
-        } else stopBatteryService()
+            bindService(Intent(this, BatteryMonitorService::class.java), serviceConnection, BIND_AUTO_CREATE)
+        } else {
+            if (batteryMonitorService != null) unbindService(serviceConnection)
+            stopBatteryService()
+            batteryMonitorService = null
+        }
         isServiceRunning = enabled
         getPreferences(MODE_PRIVATE).edit().putBoolean("service_running", enabled).apply()
     }
 
     private fun startBatteryService() = ContextCompat.startForegroundService(this, Intent(this, BatteryMonitorService::class.java))
     private fun stopBatteryService() = stopService(Intent(this, BatteryMonitorService::class.java))
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isServiceRunning && batteryMonitorService != null) {
+            unbindService(serviceConnection)
+        }
+    }
 
     override fun onStart() {
         super.onStart()
@@ -269,7 +323,7 @@ fun BatteryMonitorScreen(
 fun GraphRangeSelector(selectedHours: Int, onRangeChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Graph Range:", style = MaterialTheme.typography.labelLarge)
-        listOf(1, 6, 12).forEach { hours ->
+        listOf(1, 3, 6, 12).forEach { hours ->
             FilterChip(
                 selected = selectedHours == hours,
                 onClick = { onRangeChange(hours) },
@@ -326,15 +380,24 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
     val data = history.filter { it.timestamp >= startTime }
     if (data.isEmpty()) return
 
+    val normalColor = Color(0xFF6200EE)
+    val chargingColor = Color(0xFF4CAF50)
+
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val width = size.width; val height = size.height; val path = Path()
+        val width = size.width; val height = size.height
         val duration = now - startTime
+        val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1.dp.toPx(), 8.dp.toPx())
         
-        data.forEachIndexed { index, entry ->
+        data.forEach { entry ->
             val x = (entry.timestamp - startTime).toFloat() / duration * width
-            val y = height - (entry.percent / 100f * height)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            val barHeight = entry.percent / 100f * height
+            val color = if (entry.isCharging) chargingColor else normalColor
+            
+            drawRect(
+                color = color,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+            )
         }
-        drawPath(path, Color(0xFF6200EE), style = Stroke(width = 2.dp.toPx()))
     }
 }
