@@ -6,7 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -26,8 +28,27 @@ import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import java.util.Timer
+import java.util.TimerTask
 
 class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
+
+    private var bluetoothHeadset: BluetoothHeadset? = null
+    private val profileListener = object : BluetoothProfile.ServiceListener {
+        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+            if (profile == BluetoothProfile.HEADSET) {
+                bluetoothHeadset = proxy as BluetoothHeadset
+                Log.d("BatteryMonitorService", "BluetoothHeadset profile connected")
+                updateEarphoneBatteryFromProfile()
+            }
+        }
+        override fun onServiceDisconnected(profile: Int) {
+            if (profile == BluetoothProfile.HEADSET) {
+                bluetoothHeadset = null
+                Log.d("BatteryMonitorService", "BluetoothHeadset profile disconnected")
+            }
+        }
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): BatteryMonitorService = this@BatteryMonitorService
@@ -51,6 +72,8 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     val watchHistory = mutableListOf<BatteryEntry>()
     val earphoneHistory = mutableListOf<BatteryEntry>()
 
+    private var watchUpdateTimer: Timer? = null
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -60,6 +83,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     currentPhonePercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     currentPhoneCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
                     addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging)
+                    requestWatchBatteryUpdate()
                 }
                 ACTION_BATTERY_LEVEL_CHANGED -> {
                     updateEarphoneInfo(intent)
@@ -97,12 +121,36 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
             addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(batteryReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(batteryReceiver, filter, RECEIVER_EXPORTED)
         } else {
             registerReceiver(batteryReceiver, filter)
         }
+
+        val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter?.getProfileProxy(this, profileListener, BluetoothProfile.HEADSET)
+
         Wearable.getDataClient(this).addListener(this)
         syncAllData()
+        startWatchUpdateTimer()
+    }
+
+    private fun startWatchUpdateTimer() {
+        watchUpdateTimer?.cancel()
+        watchUpdateTimer = Timer().apply {
+            schedule(object : TimerTask() {
+                override fun run() { requestWatchBatteryUpdate() }
+            }, 1000, 20 * 60 * 1000) // Initial delay 1s, then every 20 mins
+        }
+    }
+
+    private fun requestWatchBatteryUpdate() {
+        Log.d("BatteryMonitorService", "Requesting watch battery update")
+        val nodeClient = Wearable.getNodeClient(this)
+        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            nodes.forEach { node ->
+                Wearable.getMessageClient(this).sendMessage(node.id, "/request_battery_update", null)
+            }
+        }
     }
 
     private fun fetchInitialBatteryState() {
@@ -161,6 +209,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     }
 
     private fun updateEarphoneInfo(intent: Intent) {
+        Log.d("BatteryMonitorService", "updateEarphoneInfo called with action: ${intent.action}")
         val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
         } else {
@@ -173,19 +222,53 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         val bC = intent.getIntExtra("android.bluetooth.device.extra.CASE_BATTERY_LEVEL", -1)
         
         if (device != null) {
-            if (batteryLevel != -1) currentEarphonePercent = batteryLevel
+            if (batteryLevel != -1) {
+                Log.d("BatteryMonitorService", "Earphone battery from intent: $batteryLevel%")
+                currentEarphonePercent = batteryLevel
+            }
             if (bL != -1) currentEarphoneL = bL
             if (bR != -1) currentEarphoneR = bR
             if (bC != -1) currentEarphoneCase = bC
             if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                 currentEarphoneName = device.name
+                Log.d("BatteryMonitorService", "Device name: ${device.name}")
+            }
+        } else {
+            // If device info is missing in intent, try profile
+            updateEarphoneBatteryFromProfile()
+        }
+    }
+
+    private fun updateEarphoneBatteryFromProfile() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
+        
+        bluetoothHeadset?.connectedDevices?.firstOrNull()?.let { device ->
+            // Attempt to get battery level via reflection or standard method if available
+            try {
+                // Some devices support standard getBatteryLevel() via reflection or hidden API
+                val method = device.javaClass.getMethod("getBatteryLevel")
+                val level = method.invoke(device) as Int
+                if (level != -1) {
+                    Log.d("BatteryMonitorService", "Earphone battery from profile: $level%")
+                    currentEarphonePercent = level
+                    currentEarphoneName = device.name
+                    addHistory(earphoneHistory, "earphone", level, false)
+                    syncAllData()
+                }
+            } catch (e: Exception) {
+                Log.d("BatteryMonitorService", "Could not get battery level via reflection: ${e.message}")
             }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        watchUpdateTimer?.cancel()
         unregisterReceiver(batteryReceiver)
+        bluetoothHeadset?.let {
+            val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+            bluetoothManager.adapter?.closeProfileProxy(BluetoothProfile.HEADSET, it)
+        }
         Wearable.getDataClient(this).removeListener(this)
     }
 

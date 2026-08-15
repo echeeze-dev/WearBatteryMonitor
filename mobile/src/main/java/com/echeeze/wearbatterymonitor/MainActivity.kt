@@ -21,6 +21,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var earphoneR by mutableStateOf<Int?>(null)
     private var earphoneCase by mutableStateOf<Int?>(null)
     private var earphoneName by mutableStateOf<String?>(null)
+    private var watchName by mutableStateOf<String?>(null)
     private var isServiceRunning by mutableStateOf(false)
     private var graphRangeHours by mutableStateOf(1)
 
@@ -73,7 +76,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             watchHistory.clear(); watchHistory.addAll(service.watchHistory)
             earphoneHistory.clear(); earphoneHistory.addAll(service.earphoneHistory)
             
-            // Also sync current states
+            // Sync current states
             batteryPercent = service.currentPhonePercent
             isCharging = service.currentPhoneCharging
             earphonePercent = service.currentEarphonePercent
@@ -134,6 +137,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                         onServiceToggle = { toggleService(it) },
                         graphRangeHours = graphRangeHours,
                         onGraphRangeChange = { updateGraphRange(it) },
+                        watchName = watchName,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -187,6 +191,9 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).addListener(this)
         Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
             items.find { it.uri.path == "/watch_battery" }?.let { updateWatchState(DataMapItem.fromDataItem(it).dataMap) }
+        }
+        Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
+            watchName = nodes.firstOrNull()?.displayName
         }
         sendGraphRangeToWear(graphRangeHours)
     }
@@ -285,6 +292,7 @@ fun BatteryMonitorScreen(
     earphonePercent: Int?, earphoneL: Int?, earphoneR: Int?, earphoneCase: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
     isServiceRunning: Boolean, onServiceToggle: (Boolean) -> Unit,
     graphRangeHours: Int, onGraphRangeChange: (Int) -> Unit,
+    watchName: String?,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -296,11 +304,35 @@ fun BatteryMonitorScreen(
         GraphRangeSelector(graphRangeHours, onGraphRangeChange)
         Spacer(modifier = Modifier.height(24.dp))
         
-        BatterySection("Smartphone", phonePercent, phoneIsCharging, phoneHistory, rangeHours = graphRangeHours)
+        BatterySection(
+            icon = Icons.Default.Smartphone,
+            title = Build.MODEL ?: "Smartphone",
+            percent = phonePercent,
+            isCharging = phoneIsCharging,
+            history = phoneHistory,
+            rangeHours = graphRangeHours
+        )
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        BatterySection("Smartwatch", watchPercent ?: 0, watchIsCharging, watchHistory, watchPercent == null, rangeHours = graphRangeHours)
+        BatterySection(
+            icon = Icons.Default.Watch,
+            title = watchName ?: "Smartwatch",
+            percent = watchPercent ?: 0,
+            isCharging = watchIsCharging,
+            history = watchHistory,
+            isDisconnected = watchPercent == null,
+            rangeHours = graphRangeHours
+        )
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        EarphoneSection(earphoneName, earphonePercent, earphoneL, earphoneR, earphoneCase, earphoneHistory, rangeHours = graphRangeHours)
+        EarphoneSection(
+            icon = Icons.Default.Headset,
+            name = earphoneName,
+            percent = earphonePercent,
+            L = earphoneL,
+            R = earphoneR,
+            C = earphoneCase,
+            history = earphoneHistory,
+            rangeHours = graphRangeHours
+        )
         
         Spacer(modifier = Modifier.height(40.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -334,9 +366,13 @@ fun GraphRangeSelector(selectedHours: Int, onRangeChange: (Int) -> Unit) {
 }
 
 @Composable
-fun BatterySection(title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false, rangeHours: Int) {
+fun BatterySection(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false, rangeHours: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        }
         Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(16.dp))
@@ -345,9 +381,13 @@ fun BatterySection(title: String, percent: Int, isCharging: Boolean, history: Li
 }
 
 @Composable
-fun EarphoneSection(name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>, rangeHours: Int) {
+fun EarphoneSection(icon: androidx.compose.ui.graphics.vector.ImageVector, name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>, rangeHours: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = name ?: "Earphones", style = MaterialTheme.typography.headlineSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = name ?: "Earphones", style = MaterialTheme.typography.headlineSmall)
+        }
         if (L != null || R != null || C != null) {
             Row(modifier = Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 L?.let { BatterySubItem("Left", it) }
