@@ -25,7 +25,7 @@ class TileDataUpdateService : WearableListenerService() {
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/battery_status") {
                 Log.d("TileDataUpdateService", "Requesting tile update")
                 TileService.getUpdater(this)
-                    .requestUpdate(MainTileService::class.java)
+                    .requestUpdate(PhoneBatteryTileService::class.java)
             }
         }
     }

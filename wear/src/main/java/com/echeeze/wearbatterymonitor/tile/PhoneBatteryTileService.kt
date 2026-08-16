@@ -24,9 +24,6 @@ import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.RequestBuilders.ResourcesRequest
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
-import androidx.wear.tiles.tooling.preview.Preview
-import androidx.wear.tiles.tooling.preview.TilePreviewData
-import androidx.wear.tooling.preview.devices.WearDevices
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.google.common.util.concurrent.Futures
@@ -40,13 +37,18 @@ import java.util.Locale
 
 private const val RESOURCES_VERSION = "1"
 
-class MainTileService : TileService() {
+class PhoneBatteryTileService : TileService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO)
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.i("PhoneBatteryTileService", "onCreate")
+    }
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> =
         serviceScope.future {
-            Log.d("MainTileService", "onTileRequest started")
-            val dataClient = Wearable.getDataClient(this@MainTileService)
+            Log.d("PhoneBatteryTileService", "onTileRequest started")
+            val dataClient = Wearable.getDataClient(this@PhoneBatteryTileService)
             
             var percent = 0
             var isCharging = false
@@ -71,10 +73,10 @@ class MainTileService : TileService() {
                 }
                 dataItems.release()
             } catch (e: Exception) {
-                Log.e("MainTileService", "Error fetching data", e)
+                Log.e("PhoneBatteryTileService", "Error fetching data", e)
             }
             
-            tile(requestParams, this@MainTileService, percent, isCharging, timestamp, history)
+            tile(requestParams, this@PhoneBatteryTileService, percent, isCharging, timestamp, history)
         }
 
     override fun onTileResourcesRequest(requestParams: ResourcesRequest): ListenableFuture<Resources> =
@@ -185,9 +187,3 @@ private fun barChart(history: List<Pair<Int, Boolean>>): LayoutElementBuilders.L
     return row.build()
 }
 
-@Preview(device = WearDevices.SMALL_ROUND)
-@Preview(device = WearDevices.LARGE_ROUND)
-fun tilePreview(context: Context) = TilePreviewData(::resources) {
-    val history = List(20) { (50..90).random() to (it % 5 == 0) }
-    tile(it, context, 75, true, System.currentTimeMillis(), history)
-}

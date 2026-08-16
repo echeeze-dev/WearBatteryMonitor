@@ -28,13 +28,15 @@
                 android:value="3600" />
         </service>
         <service
-            android:name="com.echeeze.wearbatterymonitor.tile.MainTileService"
+            android:name="com.echeeze.wearbatterymonitor.tile.PhoneBatteryTileService"
             android:exported="true"
-            android:label="Battery Monitor"
+            android:label="@string/tile_label"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
+            <meta-data android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@mipmap/ic_launcher" />
         </service>
 
         <service
