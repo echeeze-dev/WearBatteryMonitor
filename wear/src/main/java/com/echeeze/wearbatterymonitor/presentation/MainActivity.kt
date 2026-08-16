@@ -36,6 +36,7 @@ import androidx.wear.compose.material3.*
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.data.Constants
 import com.echeeze.wearbatterymonitor.presentation.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
 import kotlinx.coroutines.launch
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean = false) {
         list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
-        if (list.size > 500) list.removeAt(0)
+        if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
     }
 
     private fun sendWatchBatteryToPhone() {

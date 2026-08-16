@@ -17,8 +17,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.edit
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,14 +35,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.data.Constants
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener, DataClient.OnDataChangedListener {
 
-    private var batteryPercent by mutableStateOf(0)
+    private var batteryPercent by mutableIntStateOf(0)
     private var isCharging by mutableStateOf(false)
     private var watchPercent by mutableStateOf<Int?>(null)
     private var watchIsCharging by mutableStateOf(false)
@@ -49,7 +57,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var earphoneName by mutableStateOf<String?>(null)
     private var watchName by mutableStateOf<String?>(null)
     private var isServiceRunning by mutableStateOf(false)
-    private var graphRangeHours by mutableStateOf(1)
+    private var graphRangeHours by mutableIntStateOf(1)
+    private var updateIntervalSeconds by mutableIntStateOf(60)
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -112,6 +121,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         val sharedPref = getPreferences(MODE_PRIVATE)
         isServiceRunning = sharedPref.getBoolean("service_running", false)
         graphRangeHours = sharedPref.getInt("graph_range_hours", 1)
+        updateIntervalSeconds = sharedPref.getInt("update_interval_seconds", 60)
         if (isServiceRunning) {
             startBatteryService()
             bindService(Intent(this, BatteryMonitorService::class.java), serviceConnection, BIND_AUTO_CREATE)
@@ -137,6 +147,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                         onServiceToggle = { toggleService(it) },
                         graphRangeHours = graphRangeHours,
                         onGraphRangeChange = { updateGraphRange(it) },
+                        updateIntervalSeconds = updateIntervalSeconds,
+                        onIntervalChange = { updateInterval(it) },
                         watchName = watchName,
                         modifier = Modifier.padding(innerPadding)
                     )
@@ -145,9 +157,19 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         }
     }
 
+    private fun updateInterval(seconds: Int) {
+        updateIntervalSeconds = seconds
+        getPreferences(MODE_PRIVATE).edit {
+            putInt("update_interval_seconds", seconds)
+        }
+        batteryMonitorService?.updateTimerInterval(seconds)
+    }
+
     private fun updateGraphRange(hours: Int) {
         graphRangeHours = hours
-        getPreferences(MODE_PRIVATE).edit().putInt("graph_range_hours", hours).apply()
+        getPreferences(MODE_PRIVATE).edit {
+            putInt("graph_range_hours", hours)
+        }
         sendGraphRangeToWear(hours)
     }
 
@@ -163,7 +185,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         // If service is running, it handles history. Only add here if NOT running.
         if (!isServiceRunning) {
             list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
-            if (list.size > 500) list.removeAt(0)
+            if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
         } else {
             // If running, we sync from service periodically or on demand
             syncHistoryFromService()
@@ -235,7 +257,9 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             batteryMonitorService = null
         }
         isServiceRunning = enabled
-        getPreferences(MODE_PRIVATE).edit().putBoolean("service_running", enabled).apply()
+        getPreferences(MODE_PRIVATE).edit {
+            putBoolean("service_running", enabled)
+        }
     }
 
     private fun startBatteryService() = ContextCompat.startForegroundService(this, Intent(this, BatteryMonitorService::class.java))
@@ -294,10 +318,13 @@ fun BatteryMonitorScreen(
     earphonePercent: Int?, earphoneL: Int?, earphoneR: Int?, earphoneCase: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
     isServiceRunning: Boolean, onServiceToggle: (Boolean) -> Unit,
     graphRangeHours: Int, onGraphRangeChange: (Int) -> Unit,
+    updateIntervalSeconds: Int, onIntervalChange: (Int) -> Unit,
     watchName: String?,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var detailDialogData by remember { mutableStateOf<Pair<String, List<BatteryEntry>>?>(null) }
+    
     val permsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
         if (perms.values.all { it }) onServiceToggle(true) else Toast.makeText(context, "Permissions required", Toast.LENGTH_SHORT).show()
     }
@@ -312,7 +339,8 @@ fun BatteryMonitorScreen(
             percent = phonePercent,
             isCharging = phoneIsCharging,
             history = phoneHistory,
-            rangeHours = graphRangeHours
+            rangeHours = graphRangeHours,
+            onGraphClick = { detailDialogData = (Build.MODEL ?: "Smartphone") to phoneHistory.toList() }
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
         BatterySection(
@@ -322,7 +350,8 @@ fun BatteryMonitorScreen(
             isCharging = watchIsCharging,
             history = watchHistory,
             isDisconnected = watchPercent == null,
-            rangeHours = graphRangeHours
+            rangeHours = graphRangeHours,
+            onGraphClick = { detailDialogData = (watchName ?: "Smartwatch") to watchHistory.toList() }
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
         EarphoneSection(
@@ -333,23 +362,74 @@ fun BatteryMonitorScreen(
             R = earphoneR,
             C = earphoneCase,
             history = earphoneHistory,
-            rangeHours = graphRangeHours
+            rangeHours = graphRangeHours,
+            onGraphClick = { detailDialogData = (earphoneName ?: "Earphones") to earphoneHistory.toList() }
         )
         
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(32.dp))
+        UpdateIntervalSelector(updateIntervalSeconds, onIntervalChange)
+        
+        Spacer(modifier = Modifier.height(24.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Background Monitoring")
             Spacer(modifier = Modifier.width(16.dp))
-            Switch(checked = isServiceRunning, onCheckedChange = { checked ->
-                if (checked) {
-                    val perms = mutableListOf<String>()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
-                    val missing = perms.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-                    if (missing.isNotEmpty()) permsLauncher.launch(missing.toTypedArray()) else onServiceToggle(true)
-                } else onServiceToggle(false)
-            })
+            Switch(
+                checked = isServiceRunning,
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        val perms = mutableListOf<String>()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+                        val missing = perms.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                        if (missing.isNotEmpty()) permsLauncher.launch(missing.toTypedArray()) else onServiceToggle(true)
+                    } else onServiceToggle(false)
+                },
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = Color(0xFF4CAF50),
+                    checkedThumbColor = Color.White
+                )
+            )
         }
+    }
+
+    detailDialogData?.let { (title, history) ->
+        HistoryDetailDialog(title, history, onDismiss = { detailDialogData = null })
+    }
+}
+
+@Composable
+fun UpdateIntervalSelector(seconds: Int, onIntervalChange: (Int) -> Unit) {
+    val intervals = remember {
+        val list = mutableListOf<Int>()
+        for (i in 1..10) list.add(i)
+        for (i in 15..60 step 5) list.add(i)
+        for (i in 90..300 step 30) list.add(i)
+        for (i in 360..600 step 60) list.add(i)
+        list
+    }
+    
+    val currentIndex = intervals.indexOf(seconds).coerceAtLeast(0)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
+        Text("Update Interval: ${formatInterval(seconds)}", style = MaterialTheme.typography.labelLarge)
+        Slider(
+            value = currentIndex.toFloat(),
+            onValueChange = { onIntervalChange(intervals[it.toInt()]) },
+            valueRange = 0f..(intervals.size - 1).toFloat(),
+            steps = intervals.size - 2
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("1s", style = MaterialTheme.typography.labelSmall)
+            Text("10m", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+fun formatInterval(seconds: Int): String {
+    return when {
+        seconds < 60 -> "${seconds}s"
+        seconds % 60 == 0 -> "${seconds / 60}m"
+        else -> "${seconds / 60}m ${seconds % 60}s"
     }
 }
 
@@ -368,7 +448,16 @@ fun GraphRangeSelector(selectedHours: Int, onRangeChange: (Int) -> Unit) {
 }
 
 @Composable
-fun BatterySection(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, percent: Int, isCharging: Boolean, history: List<BatteryEntry>, isDisconnected: Boolean = false, rangeHours: Int) {
+fun BatterySection(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    percent: Int,
+    isCharging: Boolean,
+    history: List<BatteryEntry>,
+    isDisconnected: Boolean = false,
+    rangeHours: Int,
+    onGraphClick: () -> Unit
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
@@ -378,12 +467,25 @@ fun BatterySection(icon: androidx.compose.ui.graphics.vector.ImageVector, title:
         Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(16.dp))
-        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history, rangeHours) }
+        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
+            HistoryGraph(history, rangeHours) 
+        }
+        DebugInfoText(history)
     }
 }
 
 @Composable
-fun EarphoneSection(icon: androidx.compose.ui.graphics.vector.ImageVector, name: String?, percent: Int?, L: Int?, R: Int?, C: Int?, history: List<BatteryEntry>, rangeHours: Int) {
+fun EarphoneSection(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    name: String?,
+    percent: Int?,
+    L: Int?,
+    R: Int?,
+    C: Int?,
+    history: List<BatteryEntry>,
+    rangeHours: Int,
+    onGraphClick: () -> Unit
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
@@ -401,7 +503,74 @@ fun EarphoneSection(icon: androidx.compose.ui.graphics.vector.ImageVector, name:
         }
         if (percent != null || L != null || R != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f)) { HistoryGraph(history, rangeHours) }
+            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
+                HistoryGraph(history, rangeHours) 
+            }
+            DebugInfoText(history)
+        }
+    }
+}
+
+@Composable
+fun DebugInfoText(history: List<BatteryEntry>) {
+    val sdf = remember { SimpleDateFormat("MM/dd HH:mm:ss", Locale.getDefault()) }
+    val count = history.size
+    val oldest = history.firstOrNull()?.timestamp?.let { sdf.format(Date(it)) } ?: "N/A"
+    val newest = history.lastOrNull()?.timestamp?.let { sdf.format(Date(it)) } ?: "N/A"
+    
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            text = "Data: $count / ${Constants.MAX_HISTORY_SIZE}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Text(
+            text = "Range: $oldest - $newest",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+    }
+}
+
+@Composable
+fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: () -> Unit) {
+    val sdf = remember { SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()) }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "$title History", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(history.asReversed()) { entry ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(text = sdf.format(Date(entry.timestamp)), style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = if (entry.isCharging) "Charging" else " ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
+                            Text(text = "${entry.percent}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text("Close")
+                }
+            }
         }
     }
 }

@@ -22,6 +22,7 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.data.Constants
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -136,10 +137,16 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
 
         Wearable.getDataClient(this).addListener(this)
         syncAllData()
-        startWatchUpdateTimer()
+        val sharedPref = getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
+        val interval = sharedPref.getInt("update_interval_seconds", 60)
+        startWatchUpdateTimer(interval)
     }
 
-    private fun startWatchUpdateTimer() {
+    fun updateTimerInterval(seconds: Int) {
+        startWatchUpdateTimer(seconds)
+    }
+
+    private fun startWatchUpdateTimer(intervalSeconds: Int) {
         watchUpdateTimer?.cancel()
         watchUpdateTimer = Timer().apply {
             schedule(object : TimerTask() {
@@ -148,7 +155,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     requestWatchBatteryUpdate()
                     syncAllData()
                 }
-            }, 1000, 1 * 60 * 1000) // Initial delay 1s, then every 1 min
+            }, 1000, intervalSeconds * 1000L) // Initial delay 1s, then dynamic interval
         }
     }
 
@@ -205,7 +212,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean) {
         list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
-        if (list.size > 500) list.removeAt(0)
+        if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {

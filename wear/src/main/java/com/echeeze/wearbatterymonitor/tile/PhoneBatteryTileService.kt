@@ -53,12 +53,18 @@ class PhoneBatteryTileService : TileService() {
             var percent = 0
             var isCharging = false
             var timestamp = 0L
-            val history = mutableListOf<Pair<Int, Boolean>>()
+            var rangeHours = 1
+            val history = mutableListOf<Triple<Int, Boolean, Long>>()
 
             try {
                 val dataItems = com.google.android.gms.tasks.Tasks.await(dataClient.dataItems)
-                val batteryItem = dataItems.find { it.uri.path == "/battery_status" }
                 
+                // Get range settings
+                dataItems.find { it.uri.path == "/settings/graph_range" }?.let { item ->
+                    rangeHours = DataMapItem.fromDataItem(item).dataMap.getInt("range_hours", 1)
+                }
+
+                val batteryItem = dataItems.find { it.uri.path == "/battery_status" }
                 if (batteryItem != null) {
                     val dataMap = DataMapItem.fromDataItem(batteryItem).dataMap
                     percent = dataMap.getInt("battery_percent")
@@ -66,8 +72,8 @@ class PhoneBatteryTileService : TileService() {
                     timestamp = dataMap.getLong("timestamp")
                     
                     dataMap.getDataMapArrayList("phone_history")?.let { list ->
-                        list.takeLast(30).forEach { entryMap ->
-                            history.add(entryMap.getInt("p") to entryMap.getBoolean("c"))
+                        list.forEach { entryMap ->
+                            history.add(Triple(entryMap.getInt("p"), entryMap.getBoolean("c"), entryMap.getLong("t")))
                         }
                     }
                 }
@@ -76,7 +82,7 @@ class PhoneBatteryTileService : TileService() {
                 Log.e("PhoneBatteryTileService", "Error fetching data", e)
             }
             
-            tile(requestParams, this@PhoneBatteryTileService, percent, isCharging, timestamp, history)
+            tile(requestParams, this@PhoneBatteryTileService, percent, isCharging, timestamp, history, rangeHours)
         }
 
     override fun onTileResourcesRequest(requestParams: ResourcesRequest): ListenableFuture<Resources> =
@@ -95,7 +101,8 @@ private fun tile(
     percent: Int,
     isCharging: Boolean,
     timestamp: Long,
-    history: List<Pair<Int, Boolean>>
+    history: List<Triple<Int, Boolean, Long>>,
+    rangeHours: Int
 ): TileBuilders.Tile {
     val timeStr = if (timestamp > 0) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
@@ -126,7 +133,7 @@ private fun tile(
                                     )
                                 )
                                 .addContent(
-                                    barChart(history)
+                                    barChart(history, rangeHours)
                                 )
                                 .addContent(
                                     Spacer.Builder().setHeight(dp(4f)).build()
@@ -147,43 +154,50 @@ private fun tile(
         .build()
 }
 
-private fun barChart(history: List<Pair<Int, Boolean>>): LayoutElementBuilders.LayoutElement {
-    val row = Row.Builder()
-        .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_BOTTOM)
+private fun barChart(history: List<Triple<Int, Boolean, Long>>, rangeHours: Int): LayoutElementBuilders.LayoutElement {
+    val now = System.currentTimeMillis()
+    val startTime = now - (rangeHours * 3600000L)
+    val data = history.filter { it.third >= startTime }
+
+    val fullWidth = 120f
+    val barWidth = 3f
     
-    val chargingColor = ColorBuilders.argb(0xFF4CAF50.toInt())
-    val normalColor = ColorBuilders.argb(0xFF7B1FA2.toInt()) // Deep Purple
-    
-    if (history.isEmpty()) {
-        return Spacer.Builder().setHeight(dp(24f)).build()
+    val container = Box.Builder()
+        .setWidth(dp(fullWidth))
+        .setHeight(dp(24f))
+
+    if (data.isEmpty()) {
+        return container.build()
     }
 
-    history.forEach { entry ->
+    data.forEach { entry ->
+        // Calculate X position based on timestamp
+        val x = (entry.third - startTime).toFloat() / (rangeHours * 3600000f) * fullWidth
         val barHeight = (entry.first / 100f * 24f).coerceAtLeast(2f)
-        val color = if (entry.second) chargingColor else normalColor
-        row.addContent(
+        
+        container.addContent(
             Box.Builder()
-                .setWidth(dp(3f))
+                .setWidth(dp(barWidth))
                 .setHeight(dp(barHeight))
                 .setModifiers(
                     ModifiersBuilders.Modifiers.Builder()
                         .setBackground(
                             ModifiersBuilders.Background.Builder()
-                                .setColor(color)
+                                .setColor(if (entry.second) ColorBuilders.argb(0xFF4CAF50.toInt()) else ColorBuilders.argb(0xFF7B1FA2.toInt()))
                                 .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(1.5f)).build())
                                 .build()
                         )
                         .setPadding(
                             ModifiersBuilders.Padding.Builder()
-                                .setStart(dp(1.5f))
+                                .setStart(dp(x.coerceIn(0f, fullWidth - barWidth)))
                                 .build()
                         )
                         .build()
                 )
+                .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_BOTTOM)
                 .build()
         )
     }
     
-    return row.build()
+    return container.build()
 }
-
