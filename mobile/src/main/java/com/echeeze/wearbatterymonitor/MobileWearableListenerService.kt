@@ -4,6 +4,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
@@ -12,9 +15,22 @@ import com.google.android.gms.wearable.WearableListenerService
 class MobileWearableListenerService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
+        Log.i("BatteryMonitorListener", "Received message path: ${messageEvent.path}")
         if (messageEvent.path == "/request_battery_update") {
-            Log.d("BatteryMonitorListener", "Received request from Wear")
+            Log.i("BatteryMonitorListener", "Processing battery update request from Wear")
             sendBatteryStatus()
+        }
+    }
+
+    override fun onDataChanged(dataEvents: DataEventBuffer) {
+        Log.i("BatteryMonitorListener", "onDataChanged received ${dataEvents.count} events")
+        for (event in dataEvents) {
+            Log.i("BatteryMonitorListener", "Event path: ${event.dataItem.uri.path}")
+            if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/watch_battery") {
+                val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                val percent = dataMap.getInt("watch_percent")
+                Log.i("BatteryMonitorListener", "Backup listener received watch battery: $percent%")
+            }
         }
     }
 

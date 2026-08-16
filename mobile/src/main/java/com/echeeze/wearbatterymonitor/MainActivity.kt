@@ -191,6 +191,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).addListener(this)
         Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
             items.find { it.uri.path == "/watch_battery" }?.let { updateWatchState(DataMapItem.fromDataItem(it).dataMap) }
+            items.release()
         }
         Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
             watchName = nodes.firstOrNull()?.displayName
@@ -210,6 +211,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                 if (isServiceRunning) syncHistoryFromService()
             }
         }
+        dataEvents.release()
     }
 
     private fun updateWatchState(dataMap: DataMap) {

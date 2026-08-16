@@ -8,7 +8,7 @@ plugins {
 }
 
 configure<ApplicationExtension> {
-    namespace = "com.echeeze.wearbatterymonitor.wear"
+    namespace = "com.echeeze.wearbatterymonitor"
     compileSdk = 37
 
     defaultConfig {

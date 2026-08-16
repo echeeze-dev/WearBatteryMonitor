@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
             } else {
                 Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
                     items.find { it.uri.path == "/battery_status" }?.let { updateStateFromDataMap(DataMapItem.fromDataItem(it).dataMap, info.nodes.any { n -> n.isNearby }) } ?: run { connectionState = ConnectionState.NoData }
+                    items.release()
                 }
                 info.nodes.forEach { Wearable.getMessageClient(this).sendMessage(it.id, "/request_battery_update", null) }
             }

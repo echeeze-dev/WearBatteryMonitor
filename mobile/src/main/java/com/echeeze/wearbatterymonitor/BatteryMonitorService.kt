@@ -73,6 +73,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     val earphoneHistory = mutableListOf<BatteryEntry>()
 
     private var watchUpdateTimer: Timer? = null
+    private var lastWatchRequestTime = 0L
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -83,7 +84,11 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     currentPhonePercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     currentPhoneCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
                     addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging)
-                    requestWatchBatteryUpdate()
+                    
+                    val now = System.currentTimeMillis()
+                    if (now - lastWatchRequestTime > 60 * 1000) {
+                        requestWatchBatteryUpdate()
+                    }
                 }
                 ACTION_BATTERY_LEVEL_CHANGED -> {
                     updateEarphoneInfo(intent)
@@ -138,16 +143,23 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         watchUpdateTimer?.cancel()
         watchUpdateTimer = Timer().apply {
             schedule(object : TimerTask() {
-                override fun run() { requestWatchBatteryUpdate() }
-            }, 1000, 20 * 60 * 1000) // Initial delay 1s, then every 20 mins
+                override fun run() {
+                    addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging)
+                    requestWatchBatteryUpdate()
+                    syncAllData()
+                }
+            }, 1000, 1 * 60 * 1000) // Initial delay 1s, then every 1 min
         }
     }
 
     private fun requestWatchBatteryUpdate() {
         Log.d("BatteryMonitorService", "Requesting watch battery update")
+        lastWatchRequestTime = System.currentTimeMillis()
         val nodeClient = Wearable.getNodeClient(this)
         nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            Log.d("BatteryMonitorService", "Found ${nodes.size} connected nodes")
             nodes.forEach { node ->
+                Log.d("BatteryMonitorService", "Sending request to node: ${node.displayName} (${node.id})")
                 Wearable.getMessageClient(this).sendMessage(node.id, "/request_battery_update", null)
             }
         }
@@ -197,15 +209,19 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
+        Log.d("BatteryMonitorService", "onDataChanged received ${dataEvents.count} events")
         for (event in dataEvents) {
+            Log.d("BatteryMonitorService", "Event path: ${event.dataItem.uri.path}")
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/watch_battery") {
                 val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
                 val percent = dataMap.getInt("watch_percent")
                 val isCharging = dataMap.getBoolean("watch_is_charging")
+                Log.i("BatteryMonitorService", "Received watch battery: $percent%")
                 addHistory(watchHistory, "watch", percent, isCharging)
                 syncAllData()
             }
         }
+        dataEvents.release()
     }
 
     private fun updateEarphoneInfo(intent: Intent) {

@@ -13,9 +13,15 @@ import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 
 class TileDataUpdateService : WearableListenerService() {
+    override fun onCreate() {
+        super.onCreate()
+        Log.i("TileDataUpdateService", "Service created")
+    }
+
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        Log.d("TileDataUpdateService", "onDataChanged received")
+        Log.i("TileDataUpdateService", "onDataChanged received ${dataEvents.count} events")
         for (event in dataEvents) {
+            Log.i("TileDataUpdateService", "Event path: ${event.dataItem.uri.path}")
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/battery_status") {
                 Log.d("TileDataUpdateService", "Requesting tile update")
                 TileService.getUpdater(this)
@@ -25,8 +31,9 @@ class TileDataUpdateService : WearableListenerService() {
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
+        Log.i("TileDataUpdateService", "Received message path: ${messageEvent.path}")
         if (messageEvent.path == "/request_battery_update") {
-            Log.d("TileDataUpdateService", "Received battery update request from phone")
+            Log.i("TileDataUpdateService", "Processing battery update request from phone")
             sendWatchBatteryToPhone()
         }
     }
