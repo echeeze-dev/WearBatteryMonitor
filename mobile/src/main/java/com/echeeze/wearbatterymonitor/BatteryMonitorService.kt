@@ -137,7 +137,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
 
         Wearable.getDataClient(this).addListener(this)
         syncAllData()
-        val sharedPref = getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
+        val sharedPref = getSharedPreferences("MainActivity", MODE_PRIVATE)
         val interval = sharedPref.getInt("update_interval_seconds", 60)
         startWatchUpdateTimer(interval)
     }
