@@ -507,6 +507,12 @@ fun EarphoneSection(
                 HistoryGraph(history, rangeHours) 
             }
             DebugInfoText(history)
+        } else if (history.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
+                HistoryGraph(history, rangeHours) 
+            }
+            DebugInfoText(history)
         }
     }
 }
