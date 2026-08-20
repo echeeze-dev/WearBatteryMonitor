@@ -405,6 +405,9 @@ fun UpdateIntervalSelector(seconds: Int, onIntervalChange: (Int) -> Unit) {
         for (i in 15..60 step 5) list.add(i)
         for (i in 90..300 step 30) list.add(i)
         for (i in 360..600 step 60) list.add(i)
+        // New steps for 10m to 1h
+        for (i in 900..1800 step 300) list.add(i) // 15, 20, 25, 30m
+        for (i in 2400..3600 step 600) list.add(i) // 40, 50, 60m
         list
     }
     
@@ -428,8 +431,16 @@ fun UpdateIntervalSelector(seconds: Int, onIntervalChange: (Int) -> Unit) {
 fun formatInterval(seconds: Int): String {
     return when {
         seconds < 60 -> "${seconds}s"
-        seconds % 60 == 0 -> "${seconds / 60}m"
-        else -> "${seconds / 60}m ${seconds % 60}s"
+        seconds < 3600 -> {
+            val m = seconds / 60
+            val s = seconds % 60
+            if (s == 0) "${m}m" else "${m}m ${s}s"
+        }
+        else -> {
+            val h = seconds / 3600
+            val m = (seconds % 3600) / 60
+            if (m == 0) "${h}h" else "${h}h ${m}m"
+        }
     }
 }
 
@@ -599,22 +610,48 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
 
     val normalColor = Color(0xFF6200EE)
     val chargingColor = Color(0xFF4CAF50)
+    val disconnectedColor = Color.Gray
+    val gridColor = Color.Gray.copy(alpha = 0.3f)
+    val serviceActiveBgColor = Color.Gray.copy(alpha = 0.1f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height
         val duration = now - startTime
         val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1.dp.toPx(), 8.dp.toPx())
-        
+
+        // Draw grid lines (0%, 50%, 100%)
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height / 2), end = androidx.compose.ui.geometry.Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height), end = androidx.compose.ui.geometry.Offset(width, height), strokeWidth = 0.5.dp.toPx())
+
         data.forEach { entry ->
             val x = (entry.timestamp - startTime).toFloat() / duration * width
-            val barHeight = entry.percent / 100f * height
-            val color = if (entry.isCharging) chargingColor else normalColor
             
+            // 1. Draw service active background
             drawRect(
-                color = color,
-                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
-                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                color = serviceActiveBgColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, 0f),
+                size = androidx.compose.ui.geometry.Size(barWidth, height)
             )
+
+            // 2. Draw status line at bottom (2dp height)
+            val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
+            drawRect(
+                color = statusColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - 2.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(barWidth, 2.dp.toPx())
+            )
+
+            // 3. Draw battery bar (only if connected)
+            if (entry.percent >= 0) {
+                val barHeight = entry.percent / 100f * height
+                val color = if (entry.isCharging) chargingColor else normalColor
+                drawRect(
+                    color = color,
+                    topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
+                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                )
+            }
         }
     }
 }

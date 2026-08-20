@@ -152,10 +152,22 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
             schedule(object : TimerTask() {
                 override fun run() {
                     addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging)
+                    
+                    // Watch heartbeat: Record -1 if no recent data
+                    val lastWatch = watchHistory.lastOrNull()
+                    if (lastWatch == null || System.currentTimeMillis() - lastWatch.timestamp > intervalSeconds * 2000L) {
+                        addHistory(watchHistory, "watch", -1, false)
+                    }
+
+                    // Earphone heartbeat: Record -1 if not connected
+                    if (currentEarphonePercent == null) {
+                        addHistory(earphoneHistory, "earphone", -1, false)
+                    }
+
                     requestWatchBatteryUpdate()
                     syncAllData()
                 }
-            }, 1000, intervalSeconds * 1000L) // Initial delay 1s, then dynamic interval
+            }, 1000, intervalSeconds * 1000L)
         }
     }
 
@@ -346,7 +358,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
 
     private fun historyToDataMapList(history: List<BatteryEntry>): ArrayList<com.google.android.gms.wearable.DataMap> {
         val list = ArrayList<com.google.android.gms.wearable.DataMap>()
-        history.takeLast(100).forEach { entry -> // Optimization: limit sync history size
+        history.forEach { entry ->
             val dm = com.google.android.gms.wearable.DataMap()
             dm.putInt("p", entry.percent)
             dm.putLong("t", entry.timestamp)

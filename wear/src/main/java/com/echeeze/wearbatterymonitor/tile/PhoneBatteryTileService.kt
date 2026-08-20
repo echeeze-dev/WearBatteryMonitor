@@ -159,43 +159,91 @@ private fun barChart(history: List<Triple<Int, Boolean, Long>>, rangeHours: Int)
     val data = history.filter { it.third >= startTime }
 
     val fullWidth = 120f
-    val barWidth = 3f
+    val containerHeight = 24f
     
     val container = Box.Builder()
         .setWidth(dp(fullWidth))
-        .setHeight(dp(24f))
+        .setHeight(dp(containerHeight))
+
+    // Draw background grid lines (0%, 50%, 100%)
+    val gridColor = ColorBuilders.argb(0x40808080) // 25% Opacity Gray
+    
+    listOf(0f, containerHeight / 2f, containerHeight - 1f).forEach { y ->
+        container.addContent(
+            Box.Builder()
+                .setWidth(dp(fullWidth))
+                .setHeight(dp(1f))
+                .setModifiers(
+                    ModifiersBuilders.Modifiers.Builder()
+                        .setBackground(ModifiersBuilders.Background.Builder().setColor(gridColor).build())
+                        .setPadding(ModifiersBuilders.Padding.Builder().setTop(dp(y)).build())
+                        .build()
+                )
+                .build()
+        )
+    }
 
     if (data.isEmpty()) {
         return container.build()
     }
 
+    // Dynamic bar width based on data count
+    val barWidth = (fullWidth / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1f, 3f)
+
     data.forEach { entry ->
         // Calculate X position based on timestamp
         val x = (entry.third - startTime).toFloat() / (rangeHours * 3600000f) * fullWidth
-        val barHeight = (entry.first / 100f * 24f).coerceAtLeast(2f)
         
+        // 1. Draw status line at bottom (1.5dp height)
+        val statusColor = if (entry.first >= 0) 0xFF4CAF50.toInt() else 0xFF808080.toInt()
         container.addContent(
             Box.Builder()
                 .setWidth(dp(barWidth))
-                .setHeight(dp(barHeight))
+                .setHeight(dp(1.5f))
                 .setModifiers(
                     ModifiersBuilders.Modifiers.Builder()
                         .setBackground(
                             ModifiersBuilders.Background.Builder()
-                                .setColor(if (entry.second) ColorBuilders.argb(0xFF4CAF50.toInt()) else ColorBuilders.argb(0xFF7B1FA2.toInt()))
-                                .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(1.5f)).build())
+                                .setColor(ColorBuilders.argb(statusColor))
                                 .build()
                         )
                         .setPadding(
                             ModifiersBuilders.Padding.Builder()
                                 .setStart(dp(x.coerceIn(0f, fullWidth - barWidth)))
+                                .setTop(dp(containerHeight - 1.5f))
                                 .build()
                         )
                         .build()
                 )
-                .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_BOTTOM)
                 .build()
         )
+
+        // 2. Draw battery bar (only if connected)
+        if (entry.first >= 0) {
+            val barHeight = (entry.first / 100f * containerHeight).coerceAtLeast(2f)
+            container.addContent(
+                Box.Builder()
+                    .setWidth(dp(barWidth))
+                    .setHeight(dp(barHeight))
+                    .setModifiers(
+                        ModifiersBuilders.Modifiers.Builder()
+                            .setBackground(
+                                ModifiersBuilders.Background.Builder()
+                                    .setColor(if (entry.second) ColorBuilders.argb(0xFF4CAF50.toInt()) else ColorBuilders.argb(0xFF7B1FA2.toInt()))
+                                    .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(1.5f)).build())
+                                    .build()
+                            )
+                            .setPadding(
+                                ModifiersBuilders.Padding.Builder()
+                                    .setStart(dp(x.coerceIn(0f, fullWidth - barWidth)))
+                                    .build()
+                            )
+                            .build()
+                    )
+                    .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_BOTTOM)
+                    .build()
+            )
+        }
     }
     
     return container.build()

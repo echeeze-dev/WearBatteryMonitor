@@ -294,22 +294,48 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
 
     val normalColor = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary
     val chargingColor = if (isOffline) Color.Gray else Color.Green
+    val disconnectedColor = Color.Gray
+    val gridColor = Color.Gray.copy(alpha = 0.3f)
+    val serviceActiveBgColor = Color.Gray.copy(alpha = 0.1f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height
         val duration = now - startTime
         val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(0.5.dp.toPx(), 4.dp.toPx())
-        
+
+        // Draw grid lines (0%, 50%, 100%)
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height / 2), end = androidx.compose.ui.geometry.Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height), end = androidx.compose.ui.geometry.Offset(width, height), strokeWidth = 0.5.dp.toPx())
+
         data.forEach { entry ->
             val x = (entry.timestamp - startTime).toFloat() / duration * width
-            val barHeight = entry.percent / 100f * height
-            val color = if (entry.isCharging) chargingColor else normalColor
             
+            // 1. Draw service active background
             drawRect(
-                color = color,
-                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
-                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                color = serviceActiveBgColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, 0f),
+                size = androidx.compose.ui.geometry.Size(barWidth, height)
             )
+
+            // 2. Draw status line at bottom (2dp height)
+            val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
+            drawRect(
+                color = statusColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - 1.5.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(barWidth, 1.5.dp.toPx())
+            )
+
+            // 3. Draw battery bar (only if connected)
+            if (entry.percent >= 0) {
+                val barHeight = entry.percent / 100f * height
+                val color = if (entry.isCharging) chargingColor else normalColor
+                drawRect(
+                    color = color,
+                    topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
+                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                )
+            }
         }
     }
 }
