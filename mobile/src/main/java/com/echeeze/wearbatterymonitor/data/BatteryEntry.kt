@@ -4,5 +4,6 @@ data class BatteryEntry(
     val deviceType: String,
     val percent: Int,
     val timestamp: Long,
-    val isCharging: Boolean = false
+    val isCharging: Boolean = false,
+    val deviceName: String? = null
 )

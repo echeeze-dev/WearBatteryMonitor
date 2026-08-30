@@ -48,8 +48,8 @@ sealed class ConnectionState {
     object Disconnected : ConnectionState()
     object AppNotInstalled : ConnectionState()
     object NoData : ConnectionState()
-    data class Active(val percent: Int, val isCharging: Boolean, val timestamp: Long, val earphonePercent: Int? = null, val earphoneL: Int? = null, val earphoneR: Int? = null, val earphoneCase: Int? = null, val earphoneName: String? = null) : ConnectionState()
-    data class Offline(val percent: Int, val isCharging: Boolean, val timestamp: Long, val earphonePercent: Int? = null, val earphoneL: Int? = null, val earphoneR: Int? = null, val earphoneCase: Int? = null, val earphoneName: String? = null) : ConnectionState()
+    data class Active(val percent: Int, val isCharging: Boolean, val timestamp: Long, val earphonePercent: Int? = null, val earphoneName: String? = null) : ConnectionState()
+    data class Offline(val percent: Int, val isCharging: Boolean, val timestamp: Long, val earphonePercent: Int? = null, val earphoneName: String? = null) : ConnectionState()
 }
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, CapabilityClient.OnCapabilityChangedListener {
@@ -151,11 +151,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     private fun updateStateFromDataMap(dataMap: DataMap, isOnline: Boolean) {
         val p = dataMap.getInt("battery_percent"); val c = dataMap.getBoolean("is_charging"); val t = dataMap.getLong("timestamp")
         val ep = if (dataMap.containsKey("earphone_percent")) dataMap.getInt("earphone_percent") else null
-        val eL = if (dataMap.containsKey("earphone_l")) dataMap.getInt("earphone_l") else null
-        val eR = if (dataMap.containsKey("earphone_r")) dataMap.getInt("earphone_r") else null
-        val eC = if (dataMap.containsKey("earphone_case")) dataMap.getInt("earphone_case") else null
         val en = dataMap.getString("earphone_name")
-        connectionState = if (isOnline) ConnectionState.Active(p, c, t, ep, eL, eR, eC, en) else ConnectionState.Offline(p, c, t, ep, eL, eR, eC, en)
+        connectionState = if (isOnline) ConnectionState.Active(p, c, t, ep, en) else ConnectionState.Offline(p, c, t, ep, en)
         
         // Sync history if available in the dataMap
         if (dataMap.containsKey("phone_history")) {
@@ -211,9 +208,9 @@ fun WearApp(state: ConnectionState, watchPercent: Int, watchCharging: Boolean, p
                     item { BatteryCard(watchPercent, watchCharging, System.currentTimeMillis(), false, "Watch", Icons.Default.Watch, watchHistory, screenHeight, rangeHours) }
                     item {
                         when (state) {
-                            is ConnectionState.Active -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, false, earphoneHistory, screenHeight, rangeHours)
-                            is ConnectionState.Offline -> EarphoneCard(state.earphonePercent, state.earphoneL, state.earphoneR, state.earphoneCase, state.earphoneName, state.timestamp, true, earphoneHistory, screenHeight, rangeHours)
-                            else -> EarphoneCard(null, null, null, null, null, 0L, true, earphoneHistory, screenHeight, rangeHours)
+                            is ConnectionState.Active -> EarphoneCard(state.earphonePercent, state.earphoneName, state.timestamp, false, earphoneHistory, screenHeight, rangeHours)
+                            is ConnectionState.Offline -> EarphoneCard(state.earphonePercent, state.earphoneName, state.timestamp, true, earphoneHistory, screenHeight, rangeHours)
+                            else -> EarphoneCard(null, null, 0L, true, earphoneHistory, screenHeight, rangeHours)
                         }
                     }
                     item {
@@ -252,23 +249,15 @@ fun BatteryCard(percent: Int, isCharging: Boolean, timestamp: Long, isOffline: B
 }
 
 @Composable
-fun EarphoneCard(ep: Int?, L: Int?, R: Int?, C: Int?, name: String?, timestamp: Long, isOffline: Boolean, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp, rangeHours: Int) {
+fun EarphoneCard(ep: Int?, name: String?, timestamp: Long, isOffline: Boolean, history: List<BatteryEntry>, screenHeight: androidx.compose.ui.unit.Dp, rangeHours: Int) {
     Column(modifier = Modifier.fillMaxWidth().height(screenHeight * 0.85f).padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainer), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(imageVector = Icons.Default.Headset, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary)
+            Icon(imageVector = Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.width(6.dp))
-            Text(text = name ?: "Earphones", style = MaterialTheme.typography.labelMedium, color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = name ?: "Bluetooth Device", style = MaterialTheme.typography.labelMedium, color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        if (L != null || R != null || C != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                L?.let { SmallBatteryItemFixed("L", it, isOffline) }
-                R?.let { SmallBatteryItemFixed("R", it, isOffline) }
-                C?.let { SmallBatteryItemFixed("C", it, isOffline) }
-            }
-        } else {
-            Text(text = if (ep != null) "$ep%" else "---", style = MaterialTheme.typography.displaySmall, color = Color.Gray)
-        }
+        Text(text = if (ep != null) "$ep%" else "---", style = MaterialTheme.typography.displaySmall, color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.onSurface)
         Spacer(modifier = Modifier.height(12.dp))
         Box(modifier = Modifier.height(40.dp).fillMaxWidth(0.8f)) { HistoryGraphFixed(history, isOffline, rangeHours) }
         Spacer(modifier = Modifier.height(4.dp))
@@ -276,13 +265,6 @@ fun EarphoneCard(ep: Int?, L: Int?, R: Int?, C: Int?, name: String?, timestamp: 
     }
 }
 
-@Composable
-fun SmallBatteryItemFixed(label: String, percent: Int, isOffline: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-        Text(text = "$percent%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isOffline) Color.Gray else MaterialTheme.colorScheme.onSurface)
-    }
-}
 
 @Composable
 fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHours: Int) {
@@ -354,5 +336,5 @@ private fun formatRelativeTime(timestamp: Long): String {
 @WearPreviewFontScales
 @Composable
 fun DefaultPreview() {
-    WearApp(ConnectionState.Active(75, true, System.currentTimeMillis(), 80, 70, 70, 100, "My Buds"), 90, false, emptyList(), emptyList(), emptyList(), 1)
+    WearApp(ConnectionState.Active(75, true, System.currentTimeMillis(), 80, "My Buds"), 90, false, emptyList(), emptyList(), emptyList(), 1)
 }

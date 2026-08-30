@@ -32,9 +32,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
@@ -51,9 +56,6 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var watchPercent by mutableStateOf<Int?>(null)
     private var watchIsCharging by mutableStateOf(false)
     private var earphonePercent by mutableStateOf<Int?>(null)
-    private var earphoneL by mutableStateOf<Int?>(null)
-    private var earphoneR by mutableStateOf<Int?>(null)
-    private var earphoneCase by mutableStateOf<Int?>(null)
     private var earphoneName by mutableStateOf<String?>(null)
     private var watchName by mutableStateOf<String?>(null)
     private var isServiceRunning by mutableStateOf(false)
@@ -89,9 +91,6 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             batteryPercent = service.currentPhonePercent
             isCharging = service.currentPhoneCharging
             earphonePercent = service.currentEarphonePercent
-            earphoneL = service.currentEarphoneL
-            earphoneR = service.currentEarphoneR
-            earphoneCase = service.currentEarphoneCase
             earphoneName = service.currentEarphoneName
         }
     }
@@ -104,7 +103,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                     val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                     batteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     isCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-                    addHistory(phoneHistory, "phone", batteryPercent, isCharging)
+                    addHistory(phoneHistory, "phone", batteryPercent, isCharging, Build.MODEL)
                     if (!isServiceRunning) sendBatteryStatusToWear()
                 }
                 "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
@@ -138,9 +137,6 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                         watchIsCharging = watchIsCharging,
                         watchHistory = watchHistory,
                         earphonePercent = earphonePercent,
-                        earphoneL = earphoneL,
-                        earphoneR = earphoneR,
-                        earphoneCase = earphoneCase,
                         earphoneName = earphoneName,
                         earphoneHistory = earphoneHistory,
                         isServiceRunning = isServiceRunning,
@@ -181,10 +177,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).putDataItem(putDataReq)
     }
 
-    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean) {
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null) {
         // If service is running, it handles history. Only add here if NOT running.
         if (!isServiceRunning) {
-            list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
+            list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName))
             if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
         } else {
             // If running, we sync from service periodically or on demand
@@ -194,18 +190,16 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     private fun updateEarphoneState(intent: Intent) {
         val level = intent.getIntExtra("android.bluetooth.device.extra.BATTERY_LEVEL", -1)
-        val bL = intent.getIntExtra("android.bluetooth.device.extra.LEFT_BATTERY_LEVEL", -1)
-        val bR = intent.getIntExtra("android.bluetooth.device.extra.RIGHT_BATTERY_LEVEL", -1)
-        val bC = intent.getIntExtra("android.bluetooth.device.extra.CASE_BATTERY_LEVEL", -1)
-        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level, false) }
-        if (bL != -1) earphoneL = bL
-        if (bR != -1) earphoneR = bR
-        if (bC != -1) earphoneCase = bC
+        
+        var name: String? = null
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
             val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, android.bluetooth.BluetoothDevice::class.java)
                          else @Suppress("DEPRECATION") intent.getParcelableExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE)
-            earphoneName = device?.name
+            name = device?.name
+            earphoneName = name
         }
+
+        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level, false, name) }
     }
 
     override fun onResume() {
@@ -239,7 +233,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private fun updateWatchState(dataMap: DataMap) {
         watchPercent = dataMap.getInt("watch_percent")
         watchIsCharging = dataMap.getBoolean("watch_is_charging")
-        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging)
+        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging, null)
     }
 
     private fun toggleService(enabled: Boolean) {
@@ -301,9 +295,6 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         putDataMapReq.dataMap.putInt("battery_percent", batteryPercent)
         putDataMapReq.dataMap.putBoolean("is_charging", isCharging)
         earphonePercent?.let { putDataMapReq.dataMap.putInt("earphone_percent", it) }
-        earphoneL?.let { putDataMapReq.dataMap.putInt("earphone_l", it) }
-        earphoneR?.let { putDataMapReq.dataMap.putInt("earphone_r", it) }
-        earphoneCase?.let { putDataMapReq.dataMap.putInt("earphone_case", it) }
         earphoneName?.let { putDataMapReq.dataMap.putString("earphone_name", it) }
         putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
         val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
@@ -315,7 +306,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 fun BatteryMonitorScreen(
     phonePercent: Int, phoneIsCharging: Boolean, phoneHistory: List<BatteryEntry>,
     watchPercent: Int?, watchIsCharging: Boolean, watchHistory: List<BatteryEntry>,
-    earphonePercent: Int?, earphoneL: Int?, earphoneR: Int?, earphoneCase: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
+    earphonePercent: Int?, earphoneName: String?, earphoneHistory: List<BatteryEntry>,
     isServiceRunning: Boolean, onServiceToggle: (Boolean) -> Unit,
     graphRangeHours: Int, onGraphRangeChange: (Int) -> Unit,
     updateIntervalSeconds: Int, onIntervalChange: (Int) -> Unit,
@@ -355,15 +346,12 @@ fun BatteryMonitorScreen(
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
         EarphoneSection(
-            icon = Icons.Default.Headset,
+            icon = Icons.Default.Bluetooth,
             name = earphoneName,
             percent = earphonePercent,
-            L = earphoneL,
-            R = earphoneR,
-            C = earphoneCase,
             history = earphoneHistory,
             rangeHours = graphRangeHours,
-            onGraphClick = { detailDialogData = (earphoneName ?: "Earphones") to earphoneHistory.toList() }
+            onGraphClick = { detailDialogData = (earphoneName ?: "Bluetooth Device") to earphoneHistory.toList() }
         )
         
         Spacer(modifier = Modifier.height(32.dp))
@@ -490,9 +478,6 @@ fun EarphoneSection(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     name: String?,
     percent: Int?,
-    L: Int?,
-    R: Int?,
-    C: Int?,
     history: List<BatteryEntry>,
     rangeHours: Int,
     onGraphClick: () -> Unit
@@ -501,18 +486,10 @@ fun EarphoneSection(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = name ?: "Earphones", style = MaterialTheme.typography.headlineSmall)
+            Text(text = name ?: "Bluetooth Device", style = MaterialTheme.typography.headlineSmall)
         }
-        if (L != null || R != null || C != null) {
-            Row(modifier = Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                L?.let { BatterySubItem("Left", it) }
-                R?.let { BatterySubItem("Right", it) }
-                C?.let { BatterySubItem("Case", it) }
-            }
-        } else {
-            Text(text = if (percent != null) "$percent%" else "Disconnected", style = MaterialTheme.typography.displayLarge, color = if (percent == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
-        }
-        if (percent != null || L != null || R != null) {
+        Text(text = if (percent != null) "$percent%" else "Disconnected", style = MaterialTheme.typography.displayLarge, color = if (percent == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
+        if (percent != null) {
             Spacer(modifier = Modifier.height(16.dp))
             Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
                 HistoryGraph(history, rangeHours) 
@@ -570,15 +547,15 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(text = sdf.format(Date(entry.timestamp)), style = MaterialTheme.typography.bodySmall)
                                 Text(
-                                    text = if (entry.isCharging) "Charging" else " ",
+                                    text = if (entry.percent == -1) "disconnect" else if (entry.isCharging) "Charging" else entry.deviceName ?: " ",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF4CAF50)
+                                    color = if (entry.isCharging) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline
                                 )
                             }
-                            Text(text = "${entry.percent}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                            Text(text = if (entry.percent == -1) "disconnect" else "${entry.percent}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
@@ -592,13 +569,6 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
     }
 }
 
-@Composable
-fun BatterySubItem(label: String, percent: Int) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = label, style = MaterialTheme.typography.labelLarge)
-        Text(text = "$percent%", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    }
-}
 
 @Composable
 fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
@@ -608,11 +578,15 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
     val data = history.filter { it.timestamp >= startTime }
     if (data.isEmpty()) return
 
+    val textMeasurer = rememberTextMeasurer()
+
     val normalColor = Color(0xFF6200EE)
     val chargingColor = Color(0xFF4CAF50)
     val disconnectedColor = Color.Gray
     val gridColor = Color.Gray.copy(alpha = 0.3f)
     val serviceActiveBgColor = Color.Gray.copy(alpha = 0.1f)
+    val boundaryColor = Color.Black.copy(alpha = 0.5f)
+    val labelColor = Color.Gray
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height
@@ -624,9 +598,36 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
         drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height / 2), end = androidx.compose.ui.geometry.Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
         drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height), end = androidx.compose.ui.geometry.Offset(width, height), strokeWidth = 0.5.dp.toPx())
 
-        data.forEach { entry ->
+        var lastDeviceName: String? = null
+
+        data.forEachIndexed { index, entry ->
             val x = (entry.timestamp - startTime).toFloat() / duration * width
             
+            // 0. Boundary and name labels
+            if (index == 0 || entry.deviceName != lastDeviceName) {
+                if (index > 0 && entry.deviceName != lastDeviceName) {
+                    // Draw boundary line
+                    drawLine(
+                        color = boundaryColor,
+                        start = androidx.compose.ui.geometry.Offset(x - barWidth, 0f),
+                        end = androidx.compose.ui.geometry.Offset(x - barWidth, height),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                    )
+                }
+                
+                // Draw name at top
+                entry.deviceName?.let { name ->
+                    drawText(
+                        textMeasurer = textMeasurer,
+                        text = name,
+                        topLeft = androidx.compose.ui.geometry.Offset(x, 2.dp.toPx()),
+                        style = TextStyle(fontSize = 8.sp, color = labelColor)
+                    )
+                }
+                lastDeviceName = entry.deviceName
+            }
+
             // 1. Draw service active background
             drawRect(
                 color = serviceActiveBgColor,
