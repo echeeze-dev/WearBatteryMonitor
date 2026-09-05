@@ -29,6 +29,8 @@ import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import com.echeeze.wearbatterymonitor.data.AppDatabase
+import kotlinx.coroutines.*
 import java.util.Timer
 import java.util.TimerTask
 
@@ -56,6 +58,9 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     }
 
     private val binder = LocalBinder()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private lateinit var database: AppDatabase
+    private lateinit var batteryDao: com.echeeze.wearbatterymonitor.data.BatteryDao
 
     private val CHANNEL_ID = "battery_monitor_channel"
     private val NOTIFICATION_ID = 1
@@ -113,6 +118,10 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
 
     override fun onCreate() {
         super.onCreate()
+        database = AppDatabase.getDatabase(this)
+        batteryDao = database.batteryDao()
+        loadHistoryFromDb()
+        
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification(0, false))
         fetchInitialBatteryState()
@@ -222,8 +231,29 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     }
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null) {
-        list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName))
+        val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName)
+        list.add(entry)
         if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
+        
+        serviceScope.launch {
+            batteryDao.insert(entry)
+            batteryDao.trimHistory(type, Constants.MAX_HISTORY_SIZE)
+        }
+    }
+
+    private fun loadHistoryFromDb() {
+        serviceScope.launch {
+            val phoneData = batteryDao.getHistoryByType("phone")
+            val watchData = batteryDao.getHistoryByType("watch")
+            val earphoneData = batteryDao.getHistoryByType("earphone")
+            
+            withContext(Dispatchers.Main) {
+                phoneHistory.clear(); phoneHistory.addAll(phoneData)
+                watchHistory.clear(); watchHistory.addAll(watchData)
+                earphoneHistory.clear(); earphoneHistory.addAll(earphoneData)
+                syncAllData()
+            }
+        }
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
@@ -310,6 +340,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     override fun onDestroy() {
         super.onDestroy()
         watchUpdateTimer?.cancel()
+        serviceScope.cancel()
         unregisterReceiver(batteryReceiver)
         bluetoothHeadset?.let {
             val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager

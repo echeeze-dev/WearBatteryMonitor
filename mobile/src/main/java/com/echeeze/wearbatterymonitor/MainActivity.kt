@@ -42,10 +42,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import com.echeeze.wearbatterymonitor.data.AppDatabase
+import com.echeeze.wearbatterymonitor.data.BatteryDao
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
 import com.echeeze.wearbatterymonitor.data.Constants
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
+import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -61,6 +64,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var isServiceRunning by mutableStateOf(false)
     private var graphRangeHours by mutableIntStateOf(1)
     private var updateIntervalSeconds by mutableIntStateOf(60)
+
+    private val activityScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private lateinit var database: AppDatabase
+    private lateinit var batteryDao: BatteryDao
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -116,11 +123,17 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        database = AppDatabase.getDatabase(this)
+        batteryDao = database.batteryDao()
+        
         enableEdgeToEdge()
         val sharedPref = getPreferences(MODE_PRIVATE)
         isServiceRunning = sharedPref.getBoolean("service_running", false)
         graphRangeHours = sharedPref.getInt("graph_range_hours", 1)
         updateIntervalSeconds = sharedPref.getInt("update_interval_seconds", 60)
+        
+        loadHistoryFromDb()
+        
         if (isServiceRunning) {
             startBatteryService()
             bindService(Intent(this, BatteryMonitorService::class.java), serviceConnection, BIND_AUTO_CREATE)
@@ -180,11 +193,31 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null) {
         // If service is running, it handles history. Only add here if NOT running.
         if (!isServiceRunning) {
-            list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName))
+            val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName)
+            list.add(entry)
             if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
+            
+            activityScope.launch(Dispatchers.IO) {
+                batteryDao.insert(entry)
+                batteryDao.trimHistory(type, Constants.MAX_HISTORY_SIZE)
+            }
         } else {
             // If running, we sync from service periodically or on demand
             syncHistoryFromService()
+        }
+    }
+
+    private fun loadHistoryFromDb() {
+        activityScope.launch(Dispatchers.IO) {
+            val phoneData = batteryDao.getHistoryByType("phone")
+            val watchData = batteryDao.getHistoryByType("watch")
+            val earphoneData = batteryDao.getHistoryByType("earphone")
+            
+            activityScope.launch(Dispatchers.Main) {
+                phoneHistory.clear(); phoneHistory.addAll(phoneData)
+                watchHistory.clear(); watchHistory.addAll(watchData)
+                earphoneHistory.clear(); earphoneHistory.addAll(earphoneData)
+            }
         }
     }
 
@@ -261,6 +294,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     override fun onDestroy() {
         super.onDestroy()
+        activityScope.cancel()
         if (isServiceRunning && batteryMonitorService != null) {
             unbindService(serviceConnection)
         }
