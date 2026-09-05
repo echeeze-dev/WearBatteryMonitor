@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                     val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                     batteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     isCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-                    addHistory(phoneHistory, "phone", batteryPercent, isCharging, Build.MODEL)
+                    addHistory(phoneHistory, "phone", batteryPercent, isCharging, Build.MODEL, "BATTERY_CHANGED")
                     if (!isServiceRunning) sendBatteryStatusToWear()
                 }
                 "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
@@ -190,10 +190,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         Wearable.getDataClient(this).putDataItem(putDataReq)
     }
 
-    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null) {
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null, recordReason: String? = null, intervalSeconds: Int? = null) {
         // If service is running, it handles history. Only add here if NOT running.
         if (!isServiceRunning) {
-            val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName)
+            val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName, recordReason, intervalSeconds)
             list.add(entry)
             if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
             
@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             earphoneName = name
         }
 
-        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level, false, name) }
+        if (level != -1) { earphonePercent = level; addHistory(earphoneHistory, "earphone", level, false, name, "BT_BATTERY_CHANGED") }
     }
 
     override fun onResume() {
@@ -266,7 +266,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private fun updateWatchState(dataMap: DataMap) {
         watchPercent = dataMap.getInt("watch_percent")
         watchIsCharging = dataMap.getBoolean("watch_is_charging")
-        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging, null)
+        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging, null, "DATA_SYNC")
     }
 
     private fun toggleService(enabled: Boolean) {
@@ -321,7 +321,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
-        if (messageEvent.path == "/request_battery_update") sendBatteryStatusToWear()
+        if (messageEvent.path == "/request_battery_update") {
+            addHistory(phoneHistory, "phone", batteryPercent, isCharging, Build.MODEL, "WEAR_REQUEST")
+            sendBatteryStatusToWear()
+        }
     }
 
     private fun sendBatteryStatusToWear() {
@@ -583,11 +586,33 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(text = sdf.format(Date(entry.timestamp)), style = MaterialTheme.typography.bodySmall)
-                                Text(
-                                    text = if (entry.percent == -1) "disconnect" else if (entry.isCharging) "Charging" else entry.deviceName ?: " ",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (entry.isCharging) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val reasonText = when (entry.recordReason) {
+                                        "BATTERY_CHANGED" -> "⚡ Battery"
+                                        "PERIODIC_INTERVAL" -> "⏱ Periodic" + (entry.intervalSeconds?.let { " (${formatInterval(it)})" } ?: "")
+                                        "INITIAL_FETCH" -> "🚀 Initial"
+                                        "WEAR_REQUEST" -> "⌚ Wear Req"
+                                        "BT_BATTERY_CHANGED" -> "🎧 BT Change"
+                                        "BT_CONNECTION" -> "🔗 BT Conn"
+                                        "DATA_SYNC" -> "🔄 Sync"
+                                        else -> entry.deviceName ?: ""
+                                    }
+                                    if (reasonText.isNotEmpty()) {
+                                        Text(
+                                            text = reasonText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                    if (entry.isCharging) {
+                                        if (reasonText.isNotEmpty()) Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Charging",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF4CAF50)
+                                        )
+                                    }
+                                }
                             }
                             Text(text = if (entry.percent == -1) "disconnect" else "${entry.percent}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                         }

@@ -9,5 +9,7 @@ data class BatteryEntry(
     val percent: Int,
     @PrimaryKey val timestamp: Long,
     val isCharging: Boolean = false,
-    val deviceName: String? = null
+    val deviceName: String? = null,
+    val recordReason: String? = null,
+    val intervalSeconds: Int? = null
 )

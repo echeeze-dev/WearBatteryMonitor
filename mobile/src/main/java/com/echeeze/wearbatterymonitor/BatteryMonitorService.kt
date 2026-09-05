@@ -86,7 +86,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                     currentPhonePercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
                     currentPhoneCharging = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-                    addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL)
+                    addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL, "BATTERY_CHANGED")
                     
                     val now = System.currentTimeMillis()
                     if (now - lastWatchRequestTime > 60 * 1000) {
@@ -95,7 +95,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                 }
                 ACTION_BATTERY_LEVEL_CHANGED -> {
                     updateEarphoneInfo(intent)
-                    currentEarphonePercent?.let { addHistory(earphoneHistory, "earphone", it, false, currentEarphoneName) }
+                    currentEarphonePercent?.let { addHistory(earphoneHistory, "earphone", it, false, currentEarphoneName, "BT_BATTERY_CHANGED") }
                 }
                 BluetoothDevice.ACTION_ACL_CONNECTED -> {
                     Log.d("BatteryMonitorService", "Bluetooth ACL connected")
@@ -107,6 +107,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     if (ActivityCompat.checkSelfPermission(context, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                         if (device?.name == currentEarphoneName) {
                             currentEarphonePercent = null; currentEarphoneName = null
+                            addHistory(earphoneHistory, "earphone", -1, false, null, "BT_CONNECTION")
                         }
                     }
                 }
@@ -144,11 +145,14 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         Wearable.getDataClient(this).addListener(this)
         syncAllData()
         val sharedPref = getSharedPreferences("MainActivity", MODE_PRIVATE)
-        val interval = sharedPref.getInt("update_interval_seconds", 60)
-        startWatchUpdateTimer(interval)
+        updateIntervalSeconds = sharedPref.getInt("update_interval_seconds", 60)
+        startWatchUpdateTimer(updateIntervalSeconds)
     }
 
+    private var updateIntervalSeconds = 60
+
     fun updateTimerInterval(seconds: Int) {
+        updateIntervalSeconds = seconds
         startWatchUpdateTimer(seconds)
     }
 
@@ -157,18 +161,18 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         watchUpdateTimer = Timer().apply {
             schedule(object : TimerTask() {
                 override fun run() {
-                    addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL)
+                    addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL, "PERIODIC_INTERVAL", intervalSeconds)
                     
                     // Watch heartbeat: Record -1 if no recent data
                     val lastWatch = watchHistory.lastOrNull()
                     if (lastWatch == null || System.currentTimeMillis() - lastWatch.timestamp > intervalSeconds * 2000L) {
                         // For watch, deviceName is handled separately in watchHistory list, but we can store it if we have it
-                        addHistory(watchHistory, "watch", -1, false, null)
+                        addHistory(watchHistory, "watch", -1, false, null, "PERIODIC_INTERVAL", intervalSeconds)
                     }
 
                     // Earphone heartbeat: Record -1 if not connected
                     if (currentEarphonePercent == null) {
-                        addHistory(earphoneHistory, "earphone", -1, false, null)
+                        addHistory(earphoneHistory, "earphone", -1, false, null, "PERIODIC_INTERVAL", intervalSeconds)
                     }
 
                     requestWatchBatteryUpdate()
@@ -197,7 +201,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         currentPhonePercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
         currentPhoneCharging = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
-        addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL)
+        addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL, "INITIAL_FETCH")
     }
 
     private fun fetchInitialBluetoothState() {
@@ -221,7 +225,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                 if (level != -1) {
                     currentEarphonePercent = level
                     currentEarphoneName = device.name
-                    addHistory(earphoneHistory, "earphone", level, false, device.name)
+                    addHistory(earphoneHistory, "earphone", level, false, device.name, "INITIAL_FETCH")
                     return@forEach
                 }
             } catch (e: Exception) {
@@ -230,8 +234,8 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         }
     }
 
-    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null) {
-        val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName)
+    private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean, deviceName: String? = null, recordReason: String? = null, intervalSeconds: Int? = null) {
+        val entry = BatteryEntry(type, percent, System.currentTimeMillis(), isCharging, deviceName, recordReason, intervalSeconds)
         list.add(entry)
         if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
         
@@ -267,7 +271,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                 Log.i("BatteryMonitorService", "Received watch battery: $percent%")
                 // We don't have easy access to watch name here without fetching connected nodes, 
                 // but we can try to get it if needed. However, watch history is mostly for the graph.
-                addHistory(watchHistory, "watch", percent, isCharging, null)
+                addHistory(watchHistory, "watch", percent, isCharging, null, "DATA_SYNC")
                 syncAllData()
             }
         }
@@ -328,7 +332,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                     Log.d("BatteryMonitorService", "Earphone battery from profile: $level%")
                     currentEarphonePercent = level
                     currentEarphoneName = device.name
-                    addHistory(earphoneHistory, "earphone", level, false, device.name)
+                    addHistory(earphoneHistory, "earphone", level, false, device.name, "INITIAL_FETCH")
                     syncAllData()
                 }
             } catch (e: Exception) {
