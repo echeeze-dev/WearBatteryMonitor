@@ -411,7 +411,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         return list
     }
 
-    private fun downsampleHistory(history: List<BatteryEntry>, targetSize: Int): List<BatteryEntry> {
+    private fun downsampleHistory(history: List<BatteryEntry>, @Suppress("SameParameterValue") targetSize: Int): List<BatteryEntry> {
         if (history.size <= targetSize) return history
         val step = history.size.toDouble() / targetSize
         val result = mutableListOf<BatteryEntry>()

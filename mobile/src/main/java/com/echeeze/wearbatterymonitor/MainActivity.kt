@@ -664,7 +664,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
             
             // 0. Boundary and name labels
             if (index == 0 || entry.deviceName != lastDeviceName) {
-                if (index > 0 && entry.deviceName != lastDeviceName) {
+                if (index > 0) {
                     // Draw boundary line
                     drawLine(
                         color = boundaryColor,
