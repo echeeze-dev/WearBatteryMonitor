@@ -390,10 +390,10 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         currentEarphoneName?.let { putDataMapReq.dataMap.putString("earphone_name", it) }
         putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
         
-        // Add history data
-        putDataMapReq.dataMap.putDataMapArrayList("phone_history", historyToDataMapList(phoneHistory))
-        putDataMapReq.dataMap.putDataMapArrayList("watch_history", historyToDataMapList(watchHistory))
-        putDataMapReq.dataMap.putDataMapArrayList("earphone_history", historyToDataMapList(earphoneHistory))
+        // Add history data (downsampled to 400 items each to fit 100KB limit and improve performance)
+        putDataMapReq.dataMap.putDataMapArrayList("phone_history", historyToDataMapList(downsampleHistory(phoneHistory, 400)))
+        putDataMapReq.dataMap.putDataMapArrayList("watch_history", historyToDataMapList(downsampleHistory(watchHistory, 400)))
+        putDataMapReq.dataMap.putDataMapArrayList("earphone_history", historyToDataMapList(downsampleHistory(earphoneHistory, 400)))
 
         val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
         dataClient.putDataItem(putDataReq)
@@ -409,5 +409,20 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
             list.add(dm)
         }
         return list
+    }
+
+    private fun downsampleHistory(history: List<BatteryEntry>, targetSize: Int): List<BatteryEntry> {
+        if (history.size <= targetSize) return history
+        val step = history.size.toDouble() / targetSize
+        val result = mutableListOf<BatteryEntry>()
+        for (i in 0 until targetSize) {
+            val index = (i * step).toInt().coerceAtMost(history.size - 1)
+            result.add(history[index])
+        }
+        // Ensure latest is included
+        if (result.last().timestamp != history.last().timestamp) {
+            result[result.size - 1] = history.last()
+        }
+        return result
     }
 }

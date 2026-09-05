@@ -188,10 +188,29 @@ private fun barChart(history: List<Triple<Int, Boolean, Long>>, rangeHours: Int)
         return container.build()
     }
 
-    // Dynamic bar width based on data count
-    val barWidth = (fullWidth / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1f, 3f)
+    // Downsample data for tile performance (ProtoLayout element limit)
+    val targetTileSize = 100
+    val displayData = if (data.size > targetTileSize) {
+        val step = data.size.toDouble() / targetTileSize
+        val result = mutableListOf<Triple<Int, Boolean, Long>>()
+        for (i in 0 until targetTileSize) {
+            val index = (i * step).toInt().coerceAtMost(data.size - 1)
+            result.add(data[index])
+        }
+        // Ensure last item is always there
+        if (result.last().third != data.last().third) {
+            result.removeAt(result.size - 1)
+            result.add(data.last())
+        }
+        result
+    } else {
+        data
+    }
 
-    data.forEach { entry ->
+    // Dynamic bar width based on reduced data count
+    val barWidth = (fullWidth / (displayData.size.coerceAtLeast(1) * 1.5f)).coerceIn(1f, 3f)
+
+    displayData.forEach { entry ->
         // Calculate X position based on timestamp
         val x = (entry.third - startTime).toFloat() / (rangeHours * 3600000f) * fullWidth
         

@@ -109,8 +109,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     }
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean = false) {
-        list.add(BatteryEntry(type, percent, System.currentTimeMillis(), isCharging))
-        if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
+        val now = System.currentTimeMillis()
+        val last = list.lastOrNull()
+        // Only add if battery changed or at least 1 minute passed
+        if (last == null || last.percent != percent || last.isCharging != isCharging || now - last.timestamp > 60000) {
+            list.add(BatteryEntry(type, percent, now, isCharging))
+            if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
+        }
     }
 
     private fun sendWatchBatteryToPhone() {
@@ -175,10 +180,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     }
 
     private fun syncHistoryFromDataMap(list: MutableList<BatteryEntry>, dataList: ArrayList<DataMap>, type: String) {
-        list.clear()
-        dataList.forEach { dm ->
-            list.add(BatteryEntry(type, dm.getInt("p"), dm.getLong("t"), dm.getBoolean("c")))
+        // Convert the DataMap list to BatteryEntry list efficiently
+        val newList = dataList.map { dm ->
+            BatteryEntry(type, dm.getInt("p"), dm.getLong("t"), dm.getBoolean("c"))
         }
+        
+        // Update the state list in one go to minimize recompositions and lag
+        list.clear()
+        list.addAll(newList)
     }
 
     override fun onCapabilityChanged(info: CapabilityInfo) { checkStatus() }
@@ -271,8 +280,22 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
     if (history.isEmpty()) return
     val now = System.currentTimeMillis()
     val startTime = now - (rangeHours * 3600000L)
-    val data = history.filter { it.timestamp >= startTime }
-    if (data.isEmpty()) return
+    
+    // 1. Filter by time range
+    val filteredData = history.filter { it.timestamp >= startTime }
+    if (filteredData.isEmpty()) return
+
+    // 2. Downsample for rendering performance if there are too many items
+    // We aim for roughly 1 bar per 2 physical pixels of width (approx 150-200 bars)
+    val maxBars = 150
+    val data = if (filteredData.size > maxBars) {
+        val step = filteredData.size.toDouble() / maxBars
+        List(maxBars) { i ->
+            filteredData[(i * step).toInt().coerceAtMost(filteredData.size - 1)]
+        }
+    } else {
+        filteredData
+    }
 
     val normalColor = if (isOffline) Color.Gray else MaterialTheme.colorScheme.primary
     val chargingColor = if (isOffline) Color.Gray else Color.Green
@@ -283,7 +306,9 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height
         val duration = now - startTime
-        val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(0.5.dp.toPx(), 4.dp.toPx())
+        
+        // Optimize bar width: Ensure bars are at least 1 physical pixel and have minimal overlap
+        val barWidth = (width / (data.size.coerceAtLeast(1) * 1.2f)).coerceIn(1f, 8.dp.toPx())
 
         // Draw grid lines (0%, 50%, 100%)
         drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
