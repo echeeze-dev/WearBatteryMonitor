@@ -38,6 +38,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -580,41 +581,57 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     items(history.asReversed()) { entry ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Column 1: Time (Fixed Width)
+                            Text(
+                                text = sdf.format(Date(entry.timestamp)).substringAfter(" "),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.width(70.dp)
+                            )
+
+                            // Column 2: Reason and Details (Flexible)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(text = sdf.format(Date(entry.timestamp)), style = MaterialTheme.typography.bodySmall)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    val reasonText = when (entry.recordReason) {
-                                        "BATTERY_CHANGED" -> "⚡ Battery"
-                                        "PERIODIC_INTERVAL" -> "⏱ Periodic" + (entry.intervalSeconds?.let { " (${formatInterval(it)})" } ?: "")
-                                        "INITIAL_FETCH" -> "🚀 Initial"
-                                        "WEAR_REQUEST" -> "⌚ Wear Req"
-                                        "BT_BATTERY_CHANGED" -> "🎧 BT Change"
-                                        "BT_CONNECTION" -> "🔗 BT Conn"
-                                        "DATA_SYNC" -> "🔄 Sync"
-                                        else -> entry.deviceName ?: ""
-                                    }
-                                    if (reasonText.isNotEmpty()) {
-                                        Text(
-                                            text = reasonText,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                    if (entry.isCharging) {
-                                        if (reasonText.isNotEmpty()) Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Charging",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color(0xFF4CAF50)
-                                        )
-                                    }
+                                val reasonTitle = when (entry.recordReason) {
+                                    "BATTERY_CHANGED" -> "⚡ Battery"
+                                    "PERIODIC_INTERVAL" -> "⏱ Periodic" + (entry.intervalSeconds?.let { " (${formatInterval(it)})" } ?: "")
+                                    "INITIAL_FETCH" -> "🚀 Initial"
+                                    "WEAR_REQUEST" -> "⌚ Wear Req"
+                                    "BT_BATTERY_CHANGED" -> "🎧 BT Change"
+                                    "BT_CONNECTION" -> "🔗 Bluetooth"
+                                    "DATA_SYNC" -> "🔄 Sync"
+                                    else -> if (entry.percent == -1) "Disconnected" else "Record"
+                                }
+                                
+                                Text(
+                                    text = reasonTitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                val details = mutableListOf<String>()
+                                entry.deviceName?.let { details.add(it) }
+                                if (entry.isCharging) details.add("Charging")
+                                if (entry.percent == -1) details.add("Disconnected")
+
+                                if (details.isNotEmpty()) {
+                                    Text(
+                                        text = details.joinToString(" • "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (entry.isCharging) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline
+                                    )
                                 }
                             }
-                            Text(text = if (entry.percent == -1) "disconnect" else "${entry.percent}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+
+                            // Column 3: Percentage (Fixed Width, Right Aligned)
+                            Text(
+                                text = if (entry.percent == -1) "—" else "${entry.percent}%",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(50.dp)
+                            )
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
