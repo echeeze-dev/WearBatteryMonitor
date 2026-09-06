@@ -748,7 +748,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
             drawRect(
                 color = serviceActiveBgColor,
                 topLeft = Offset(x - barWidth / 2, 0f),
-                size = androidx.compose.ui.geometry.Size(barWidth, height)
+                size = Size(barWidth, height)
             )
 
             // 2. Draw status line at bottom (2dp height)
@@ -756,7 +756,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
             drawRect(
                 color = statusColor,
                 topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()),
-                size = androidx.compose.ui.geometry.Size(barWidth, 2.dp.toPx())
+                size = Size(barWidth, 2.dp.toPx())
             )
 
             // 3. Draw battery bar (only if connected)
@@ -766,7 +766,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
                 drawRect(
                     color = color,
                     topLeft = Offset(x - barWidth / 2, height - barHeight),
-                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                    size = Size(barWidth, barHeight)
                 )
             }
         }
