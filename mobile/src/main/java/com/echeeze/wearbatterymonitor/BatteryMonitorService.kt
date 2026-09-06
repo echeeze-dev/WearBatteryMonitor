@@ -174,8 +174,12 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                         addHistory(watchHistory, "watch", -1, false, null, "PERIODIC_INTERVAL", intervalSeconds)
                     }
 
-                    // Earphone heartbeat: Record -1 if not connected
-                    if (currentEarphonePercent == null) {
+                    // Bluetooth heartbeat: Record -1 if not connected, but keep name if connected
+                    if (currentEarphoneName != null) {
+                        // Still connected, record current percent (even if -1) and current name
+                        addHistory(earphoneHistory, "earphone", currentEarphonePercent ?: -1, false, currentEarphoneName, "PERIODIC_INTERVAL", intervalSeconds)
+                    } else {
+                        // Truly disconnected
                         addHistory(earphoneHistory, "earphone", -1, false, null, "PERIODIC_INTERVAL", intervalSeconds)
                     }
 

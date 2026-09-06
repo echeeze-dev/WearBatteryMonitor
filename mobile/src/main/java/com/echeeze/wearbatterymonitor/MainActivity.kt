@@ -537,8 +537,13 @@ fun EarphoneSection(
             Spacer(modifier = Modifier.width(8.dp))
             Text(text = name ?: "Bluetooth Device", style = MaterialTheme.typography.headlineSmall)
         }
-        Text(text = if (percent != null) "$percent%" else "Disconnected", style = MaterialTheme.typography.displayLarge, color = if (percent == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
-        if (percent != null) {
+        val isConnected = name != null
+        Text(
+            text = if (isConnected) (if (percent != null && percent != -1) "$percent%" else "Connected") else "Disconnected",
+            style = MaterialTheme.typography.displayLarge,
+            color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+        )
+        if (isConnected) {
             Spacer(modifier = Modifier.height(16.dp))
             Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
                 HistoryGraph(history, rangeHours) 
@@ -626,9 +631,15 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                 )
 
                                 val details = mutableListOf<String>()
-                                entry.deviceName?.let { details.add(it) }
-                                if (entry.isCharging) details.add("Charging")
-                                if (entry.percent == -1) details.add("Disconnected")
+                                if (entry.deviceName != null) {
+                                    details.add(entry.deviceName)
+                                }
+                                if (entry.isCharging) {
+                                    details.add("Charging")
+                                }
+                                if (entry.percent == -1) {
+                                    details.add(if (entry.deviceName != null) "Connected" else "Disconnected")
+                                }
 
                                 if (details.isNotEmpty()) {
                                     Text(
