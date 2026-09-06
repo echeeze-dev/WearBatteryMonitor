@@ -22,7 +22,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,6 +32,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -39,6 +44,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -454,7 +460,7 @@ fun UpdateIntervalSelector(seconds: Int, onIntervalChange: (Int) -> Unit) {
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("1s", style = MaterialTheme.typography.labelSmall)
-            Text("10m", style = MaterialTheme.typography.labelSmall)
+            Text("1h", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -583,7 +589,11 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(text = "$title History", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(16.dp))
-                LazyColumn(modifier = Modifier.weight(1f)) {
+                val listState = rememberLazyListState()
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).verticalScrollbar(listState)
+                ) {
                     items(history.asReversed()) { entry ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -650,6 +660,31 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
     }
 }
 
+fun Modifier.verticalScrollbar(
+    state: LazyListState,
+    width: Dp = 4.dp
+): Modifier = drawWithContent {
+    drawContent()
+
+    val firstVisibleItem = state.layoutInfo.visibleItemsInfo.firstOrNull()
+    if (firstVisibleItem != null) {
+        val totalItemsCount = state.layoutInfo.totalItemsCount
+        val visibleItemsCount = state.layoutInfo.visibleItemsInfo.size
+        
+        if (totalItemsCount > visibleItemsCount) {
+            val elementHeight = this.size.height / totalItemsCount
+            val scrollbarHeight = visibleItemsCount * elementHeight
+            val scrollbarOffsetY = firstVisibleItem.index * elementHeight
+
+            drawRect(
+                color = Color.Gray.copy(alpha = 0.5f),
+                topLeft = Offset(this.size.width - width.toPx(), scrollbarOffsetY),
+                size = Size(width.toPx(), scrollbarHeight)
+            )
+        }
+    }
+}
+
 
 @Composable
 fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
@@ -675,9 +710,9 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
         val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1.dp.toPx(), 8.dp.toPx())
 
         // Draw grid lines (0%, 50%, 100%)
-        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
-        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height / 2), end = androidx.compose.ui.geometry.Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
-        drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height), end = androidx.compose.ui.geometry.Offset(width, height), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = Offset(0f, 0f), end = Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = Offset(0f, height / 2), end = Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
+        drawLine(gridColor, start = Offset(0f, height), end = Offset(width, height), strokeWidth = 0.5.dp.toPx())
 
         var lastDeviceName: String? = null
 
@@ -690,8 +725,8 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
                     // Draw boundary line
                     drawLine(
                         color = boundaryColor,
-                        start = androidx.compose.ui.geometry.Offset(x - barWidth, 0f),
-                        end = androidx.compose.ui.geometry.Offset(x - barWidth, height),
+                        start = Offset(x - barWidth, 0f),
+                        end = Offset(x - barWidth, height),
                         strokeWidth = 1.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                     )
@@ -702,7 +737,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
                     drawText(
                         textMeasurer = textMeasurer,
                         text = name,
-                        topLeft = androidx.compose.ui.geometry.Offset(x, 2.dp.toPx()),
+                        topLeft = Offset(x, 2.dp.toPx()),
                         style = TextStyle(fontSize = 8.sp, color = labelColor)
                     )
                 }
@@ -712,7 +747,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
             // 1. Draw service active background
             drawRect(
                 color = serviceActiveBgColor,
-                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, 0f),
+                topLeft = Offset(x - barWidth / 2, 0f),
                 size = androidx.compose.ui.geometry.Size(barWidth, height)
             )
 
@@ -720,7 +755,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
             val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
             drawRect(
                 color = statusColor,
-                topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - 2.dp.toPx()),
+                topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()),
                 size = androidx.compose.ui.geometry.Size(barWidth, 2.dp.toPx())
             )
 
@@ -730,7 +765,7 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
                 val color = if (entry.isCharging) chargingColor else normalColor
                 drawRect(
                     color = color,
-                    topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, height - barHeight),
+                    topLeft = Offset(x - barWidth / 2, height - barHeight),
                     size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
                 )
             }
