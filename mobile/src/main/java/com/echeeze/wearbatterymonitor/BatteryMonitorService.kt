@@ -100,14 +100,18 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                 BluetoothDevice.ACTION_ACL_CONNECTED -> {
                     Log.d("BatteryMonitorService", "Bluetooth ACL connected")
                     updateEarphoneInfo(intent)
+                    // Even if battery is unknown, record the connection log with device name
+                    currentEarphoneName?.let { name ->
+                        addHistory(earphoneHistory, "earphone", currentEarphonePercent ?: -1, false, name, "BT_CONNECTION")
+                    }
                 }
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                     Log.d("BatteryMonitorService", "Bluetooth ACL disconnected")
                     val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java) else @Suppress("DEPRECATION") intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     if (ActivityCompat.checkSelfPermission(context, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                         if (device?.name == currentEarphoneName) {
+                            addHistory(earphoneHistory, "earphone", -1, false, device?.name, "BT_CONNECTION")
                             currentEarphonePercent = null; currentEarphoneName = null
-                            addHistory(earphoneHistory, "earphone", -1, false, null, "BT_CONNECTION")
                         }
                     }
                 }
@@ -268,10 +272,11 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
                 val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
                 val percent = dataMap.getInt("watch_percent")
                 val isCharging = dataMap.getBoolean("watch_is_charging")
-                Log.i("BatteryMonitorService", "Received watch battery: $percent%")
-                // We don't have easy access to watch name here without fetching connected nodes, 
-                // but we can try to get it if needed. However, watch history is mostly for the graph.
-                addHistory(watchHistory, "watch", percent, isCharging, null, "DATA_SYNC")
+                val deviceName = if (dataMap.containsKey("device_name")) dataMap.getString("device_name") else null
+                val recordReason = if (dataMap.containsKey("record_reason")) dataMap.getString("record_reason") else "DATA_SYNC"
+                
+                Log.i("BatteryMonitorService", "Received watch battery: $percent% from $deviceName ($recordReason)")
+                addHistory(watchHistory, "watch", percent, isCharging, deviceName, recordReason)
                 syncAllData()
             }
         }

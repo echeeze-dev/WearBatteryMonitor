@@ -265,9 +265,14 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     }
 
     private fun updateWatchState(dataMap: DataMap) {
-        watchPercent = dataMap.getInt("watch_percent")
-        watchIsCharging = dataMap.getBoolean("watch_is_charging")
-        addHistory(watchHistory, "watch", watchPercent ?: 0, watchIsCharging, null, "DATA_SYNC")
+        val percent = dataMap.getInt("watch_percent")
+        val isCharging = dataMap.getBoolean("watch_is_charging")
+        val deviceName = if (dataMap.containsKey("device_name")) dataMap.getString("device_name") else null
+        val recordReason = if (dataMap.containsKey("record_reason")) dataMap.getString("record_reason") else "DATA_SYNC"
+
+        watchPercent = percent
+        watchIsCharging = isCharging
+        addHistory(watchHistory, "watch", percent, isCharging, deviceName, recordReason)
     }
 
     private fun toggleService(enabled: Boolean) {
@@ -598,7 +603,7 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                     "PERIODIC_INTERVAL" -> "⏱ Periodic" + (entry.intervalSeconds?.let { " (${formatInterval(it)})" } ?: "")
                                     "INITIAL_FETCH" -> "🚀 Initial"
                                     "WEAR_REQUEST" -> "⌚ Wear Req"
-                                    "BT_BATTERY_CHANGED" -> "🎧 BT Change"
+                                    "BT_BATTERY_CHANGED", "BT_UPDATE" -> "🎧 BT Battery"
                                     "BT_CONNECTION" -> "🔗 Bluetooth"
                                     "DATA_SYNC" -> "🔄 Sync"
                                     else -> if (entry.percent == -1) "Disconnected" else "Record"

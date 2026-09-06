@@ -102,10 +102,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val oldPercent = watchBatteryPercent
+        val oldCharging = watchIsCharging
+        
         watchBatteryPercent = if (level != -1 && scale != -1) (level * 100 / scale.toFloat()).toInt() else 0
         watchIsCharging = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1).let { it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL }
+        
+        val reason = if (oldPercent != watchBatteryPercent || oldCharging != watchIsCharging) "BATTERY_CHANGED" else "PERIODIC_INTERVAL"
         addHistory(watchHistory, "watch", watchBatteryPercent, watchIsCharging)
-        sendWatchBatteryToPhone()
+        sendWatchBatteryToPhone(reason)
     }
 
     private fun addHistory(list: MutableList<BatteryEntry>, type: String, percent: Int, isCharging: Boolean = false) {
@@ -118,10 +123,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         }
     }
 
-    private fun sendWatchBatteryToPhone() {
+    private fun sendWatchBatteryToPhone(reason: String = "INITIAL_FETCH") {
         val putDataReq = PutDataMapRequest.create("/watch_battery").apply {
             dataMap.putInt("watch_percent", watchBatteryPercent)
             dataMap.putBoolean("watch_is_charging", watchIsCharging)
+            dataMap.putString("device_name", Build.MODEL)
+            dataMap.putString("record_reason", reason)
             dataMap.putLong("timestamp", System.currentTimeMillis())
         }.asPutDataRequest().setUrgent()
         Wearable.getDataClient(this).putDataItem(putDataReq)
@@ -137,7 +144,11 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
                     items.find { it.uri.path == "/battery_status" }?.let { updateStateFromDataMap(DataMapItem.fromDataItem(it).dataMap, info.nodes.any { n -> n.isNearby }) } ?: run { connectionState = ConnectionState.NoData }
                     items.release()
                 }
-                info.nodes.forEach { Wearable.getMessageClient(this).sendMessage(it.id, "/request_battery_update", null) }
+                info.nodes.forEach { 
+                    Wearable.getMessageClient(this).sendMessage(it.id, "/request_battery_update", null) 
+                    // Respond to phone's request with a specific reason
+                    sendWatchBatteryToPhone("WEAR_REQUEST")
+                }
             }
         }
     }
