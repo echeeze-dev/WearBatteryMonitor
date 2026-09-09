@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     private var connectionState by mutableStateOf<ConnectionState>(ConnectionState.Initializing)
     private var watchBatteryPercent by mutableStateOf(0)
     private var watchIsCharging by mutableStateOf(false)
-    private var graphRangeHours by mutableStateOf(1)
+    private var graphRangeHours by mutableStateOf(3)
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -290,7 +290,11 @@ fun EarphoneCard(ep: Int?, name: String?, timestamp: Long, isOffline: Boolean, h
 fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHours: Int) {
     if (history.isEmpty()) return
     val now = System.currentTimeMillis()
-    val startTime = now - (rangeHours * 3600000L)
+    val oldestTimestamp = history.minByOrNull { it.timestamp }?.timestamp ?: now
+    val totalDuration = (now - oldestTimestamp).coerceAtLeast(1L)
+    
+    val startTime = if (rangeHours == 0) oldestTimestamp else now - (rangeHours * 3600000L)
+    val viewportDuration = if (rangeHours == 0) totalDuration else (rangeHours * 3600000L)
     
     // 1. Filter by time range
     val filteredData = history.filter { it.timestamp >= startTime }
@@ -316,7 +320,6 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width; val height = size.height
-        val duration = now - startTime
         
         // Optimize bar width: Ensure bars are at least 1 physical pixel and have minimal overlap
         val barWidth = (width / (data.size.coerceAtLeast(1) * 1.2f)).coerceIn(1f, 8.dp.toPx())
@@ -327,7 +330,7 @@ fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHour
         drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, height), end = androidx.compose.ui.geometry.Offset(width, height), strokeWidth = 0.5.dp.toPx())
 
         data.forEach { entry ->
-            val x = (entry.timestamp - startTime).toFloat() / duration * width
+            val x = (entry.timestamp - startTime).toFloat() / viewportDuration * width
             
             // 1. Draw service active background
             drawRect(

@@ -52,7 +52,7 @@ class PhoneBatteryTileService : TileService() {
             var percent = 0
             var isCharging = false
             var timestamp = 0L
-            var rangeHours = 1
+            var rangeHours = 3
             val history = mutableListOf<Triple<Int, Boolean, Long>>()
 
             try {
@@ -155,7 +155,12 @@ private fun tile(
 
 private fun barChart(history: List<Triple<Int, Boolean, Long>>, rangeHours: Int): LayoutElementBuilders.LayoutElement {
     val now = System.currentTimeMillis()
-    val startTime = now - (rangeHours * 3600000L)
+    val oldestTimestamp = history.minByOrNull { it.third }?.third ?: now
+    val totalDuration = (now - oldestTimestamp).coerceAtLeast(1L)
+    
+    val startTime = if (rangeHours == 0) oldestTimestamp else now - (rangeHours * 3600000L)
+    val viewportDuration = if (rangeHours == 0) totalDuration else (rangeHours * 3600000L)
+    
     val data = history.filter { it.third >= startTime }
 
     val fullWidth = 120f
@@ -211,8 +216,8 @@ private fun barChart(history: List<Triple<Int, Boolean, Long>>, rangeHours: Int)
     val barWidth = (fullWidth / (displayData.size.coerceAtLeast(1) * 1.5f)).coerceIn(1f, 3f)
 
     displayData.forEach { entry ->
-        // Calculate X position based on timestamp
-        val x = (entry.third - startTime).toFloat() / (rangeHours * 3600000f) * fullWidth
+        // Calculate X position based on timestamp and viewport duration
+        val x = (entry.third - startTime).toFloat() / viewportDuration * fullWidth
         
         // 1. Draw status line at bottom (1.5dp height)
         val statusColor = if (entry.first >= 0) 0xFF4CAF50.toInt() else 0xFF808080.toInt()

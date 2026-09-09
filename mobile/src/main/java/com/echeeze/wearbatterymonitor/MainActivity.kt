@@ -19,7 +19,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.edit
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -32,13 +34,14 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -69,7 +72,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var earphoneName by mutableStateOf<String?>(null)
     private var watchName by mutableStateOf<String?>(null)
     private var isServiceRunning by mutableStateOf(false)
-    private var graphRangeHours by mutableIntStateOf(1)
+    private var graphRangeHours by mutableIntStateOf(3)
     private var updateIntervalSeconds by mutableIntStateOf(60)
 
     private val activityScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -136,7 +139,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         enableEdgeToEdge()
         val sharedPref = getPreferences(MODE_PRIVATE)
         isServiceRunning = sharedPref.getBoolean("service_running", false)
-        graphRangeHours = sharedPref.getInt("graph_range_hours", 1)
+        graphRangeHours = sharedPref.getInt("graph_range_hours", 3)
         updateIntervalSeconds = sharedPref.getInt("update_interval_seconds", 60)
         
         loadHistoryFromDb()
@@ -485,11 +488,11 @@ fun formatInterval(seconds: Int): String {
 fun GraphRangeSelector(selectedHours: Int, onRangeChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Graph Range:", style = MaterialTheme.typography.labelLarge)
-        listOf(1, 3, 6, 12).forEach { hours ->
+        listOf(3, 6, 12, 24, 0).forEach { hours ->
             FilterChip(
                 selected = selectedHours == hours,
                 onClick = { onRangeChange(hours) },
-                label = { Text("${hours}h") }
+                label = { Text(if (hours == 0) "ALL" else "${hours}h") }
             )
         }
     }
@@ -515,8 +518,9 @@ fun BatterySection(
         Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(16.dp))
-        Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
-            HistoryGraph(history, rangeHours) 
+        val scrollState = rememberScrollState()
+        Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+            HistoryGraph(history, rangeHours, scrollState) 
         }
         DebugInfoText(history)
     }
@@ -545,14 +549,16 @@ fun EarphoneSection(
         )
         if (isConnected) {
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
-                HistoryGraph(history, rangeHours) 
+            val scrollState = rememberScrollState()
+            Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+                HistoryGraph(history, rangeHours, scrollState) 
             }
             DebugInfoText(history)
         } else if (history.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.height(60.dp).fillMaxWidth(0.8f).clickable { onGraphClick() }) { 
-                HistoryGraph(history, rangeHours) 
+            val scrollState = rememberScrollState()
+            Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+                HistoryGraph(history, rangeHours, scrollState) 
             }
             DebugInfoText(history)
         }
@@ -698,87 +704,139 @@ fun Modifier.verticalScrollbar(
 
 
 @Composable
-fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int) {
+fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: ScrollState) {
     if (history.isEmpty()) return
+    
     val now = System.currentTimeMillis()
-    val startTime = now - (rangeHours * 3600000L)
-    val data = history.filter { it.timestamp >= startTime }
-    if (data.isEmpty()) return
-
+    // 1. Determine the stable timeline range
+    val minDataTs = history.minByOrNull { it.timestamp }?.timestamp ?: now
+    val latestTimestamp = now
+    val totalTimelineDuration = (latestTimestamp - minDataTs).coerceAtLeast(1L)
+    
     val textMeasurer = rememberTextMeasurer()
+    val timeSdf = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val daySdf = remember { SimpleDateFormat("MM/dd", Locale.getDefault()) }
+
+    // Scroll to end on first load or when new data arrives
+    LaunchedEffect(history.size, rangeHours) {
+        scrollState.scrollTo(scrollState.maxValue)
+    }
 
     val normalColor = Color(0xFF6200EE)
     val chargingColor = Color(0xFF4CAF50)
     val disconnectedColor = Color.Gray
     val gridColor = Color.Gray.copy(alpha = 0.3f)
     val serviceActiveBgColor = Color.Gray.copy(alpha = 0.1f)
-    val boundaryColor = Color.Black.copy(alpha = 0.5f)
+    val boundaryColor = Color.Black.copy(alpha = 0.3f)
     val labelColor = Color.Gray
+    val dayDividerColor = Color.Red.copy(alpha = 0.4f)
 
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val width = size.width; val height = size.height
-        val duration = now - startTime
-        val barWidth = (width / (data.size.coerceAtLeast(1) * 1.5f)).coerceIn(1.dp.toPx(), 8.dp.toPx())
-
-        // Draw grid lines (0%, 50%, 100%)
-        drawLine(gridColor, start = Offset(0f, 0f), end = Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
-        drawLine(gridColor, start = Offset(0f, height / 2), end = Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
-        drawLine(gridColor, start = Offset(0f, height), end = Offset(width, height), strokeWidth = 0.5.dp.toPx())
-
-        var lastDeviceName: String? = null
-
-        data.forEachIndexed { index, entry ->
-            val x = (entry.timestamp - startTime).toFloat() / duration * width
-            
-            // 0. Boundary and name labels
-            if (index == 0 || entry.deviceName != lastDeviceName) {
-                if (index > 0) {
-                    // Draw boundary line
-                    drawLine(
-                        color = boundaryColor,
-                        start = Offset(x - barWidth, 0f),
-                        end = Offset(x - barWidth, height),
-                        strokeWidth = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                    )
-                }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val viewportWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+        
+        // 2. Calculate Canvas Width based on time density
+        val canvasWidthPx = if (rangeHours == 0) {
+            viewportWidthPx
+        } else {
+            val pxPerHour = viewportWidthPx / rangeHours.toFloat()
+            val totalHours = totalTimelineDuration.toFloat() / 3600000f
+            (totalHours * pxPerHour).coerceAtLeast(viewportWidthPx)
+        }
+        
+        Box(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
+            Canvas(modifier = Modifier.fillMaxHeight().width(with(LocalDensity.current) { canvasWidthPx.toDp() })) {
+                val width = size.width
+                val height = size.height
                 
-                // Draw name at top
-                entry.deviceName?.let { name ->
-                    drawText(
-                        textMeasurer = textMeasurer,
-                        text = name,
-                        topLeft = Offset(x, 2.dp.toPx()),
-                        style = TextStyle(fontSize = 8.sp, color = labelColor)
+                // Draw horizontal grid lines
+                drawLine(gridColor, start = Offset(0f, 0f), end = Offset(width, 0f), strokeWidth = 0.5.dp.toPx())
+                drawLine(gridColor, start = Offset(0f, height / 2), end = Offset(width, height / 2), strokeWidth = 0.5.dp.toPx())
+                drawLine(gridColor, start = Offset(0f, height), end = Offset(width, height), strokeWidth = 0.5.dp.toPx())
+
+                var lastDeviceName: String? = null
+                var lastDay: Int = -1
+                val calendar = Calendar.getInstance()
+
+                // 3. Map items to X coordinates
+                val barWidth = (width / (history.size.coerceAtLeast(1) * 1.2f)).coerceIn(2.dp.toPx(), 12.dp.toPx())
+
+                history.forEachIndexed { index, entry ->
+                    // Linear mapping from time to pixels (Always time-based to show gaps)
+                    val x = ((entry.timestamp - minDataTs).toFloat() / totalTimelineDuration) * width
+                    
+                    // --- Drawing Layers ---
+
+                    // Layer 0: Day Dividers
+                    calendar.timeInMillis = entry.timestamp
+                    val currentDay = calendar.get(Calendar.DAY_OF_YEAR)
+                    if (lastDay != -1 && currentDay != lastDay) {
+                        drawLine(color = dayDividerColor, start = Offset(x, 0f), end = Offset(x, height), strokeWidth = 1.dp.toPx())
+                        drawText(
+                            textMeasurer = textMeasurer,
+                            text = daySdf.format(Date(entry.timestamp)),
+                            topLeft = Offset(x + 4.dp.toPx(), height - 12.dp.toPx()),
+                            style = TextStyle(fontSize = 9.sp, color = dayDividerColor, fontWeight = FontWeight.Bold)
+                        )
+                    }
+                    lastDay = currentDay
+
+                    // Layer 1: Device Boundary Lines & Labels
+                    if (index == 0 || entry.deviceName != lastDeviceName) {
+                        if (index > 0) {
+                            drawLine(
+                                color = boundaryColor,
+                                start = Offset(x, 0f),
+                                end = Offset(x, height),
+                                strokeWidth = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                            )
+                        }
+                        entry.deviceName?.let { name ->
+                            drawText(
+                                textMeasurer = textMeasurer,
+                                text = name,
+                                topLeft = Offset(x + 4.dp.toPx(), 2.dp.toPx()),
+                                style = TextStyle(fontSize = 8.sp, color = labelColor)
+                            )
+                        }
+                        lastDeviceName = entry.deviceName
+                    }
+
+                    // Layer 2: Periodic Time Labels
+                    if (index % 60 == 0 || index == history.size - 1) {
+                        drawText(
+                            textMeasurer = textMeasurer,
+                            text = timeSdf.format(Date(entry.timestamp)),
+                            topLeft = Offset(x, height / 2 + 2.dp.toPx()),
+                            style = TextStyle(fontSize = 7.sp, color = gridColor)
+                        )
+                    }
+
+                    // Layer 3: Service active background
+                    drawRect(
+                        color = serviceActiveBgColor,
+                        topLeft = Offset(x - barWidth / 2, 0f),
+                        size = Size(barWidth, height)
                     )
+
+                    // Layer 4: Status line at bottom
+                    val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
+                    drawRect(
+                        color = statusColor,
+                        topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()),
+                        size = Size(barWidth, 2.dp.toPx())
+                    )
+
+                    // Layer 5: Battery Percent Bar
+                    if (entry.percent >= 0) {
+                        val barHeight = (entry.percent / 100f) * height
+                        drawRect(
+                            color = if (entry.isCharging) chargingColor else normalColor,
+                            topLeft = Offset(x - barWidth / 2, height - barHeight),
+                            size = Size(barWidth, barHeight)
+                        )
+                    }
                 }
-                lastDeviceName = entry.deviceName
-            }
-
-            // 1. Draw service active background
-            drawRect(
-                color = serviceActiveBgColor,
-                topLeft = Offset(x - barWidth / 2, 0f),
-                size = Size(barWidth, height)
-            )
-
-            // 2. Draw status line at bottom (2dp height)
-            val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
-            drawRect(
-                color = statusColor,
-                topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()),
-                size = Size(barWidth, 2.dp.toPx())
-            )
-
-            // 3. Draw battery bar (only if connected)
-            if (entry.percent >= 0) {
-                val barHeight = entry.percent / 100f * height
-                val color = if (entry.isCharging) chargingColor else normalColor
-                drawRect(
-                    color = color,
-                    topLeft = Offset(x - barWidth / 2, height - barHeight),
-                    size = Size(barWidth, barHeight)
-                )
             }
         }
     }
