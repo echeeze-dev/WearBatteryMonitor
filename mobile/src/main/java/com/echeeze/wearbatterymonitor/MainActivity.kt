@@ -728,7 +728,6 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
     val gridColor = Color.Gray.copy(alpha = 0.3f)
     val serviceActiveBgColor = Color.Gray.copy(alpha = 0.1f)
     val boundaryColor = Color.Black.copy(alpha = 0.3f)
-    val labelColor = Color.Gray
     val dayDividerColor = Color.Red.copy(alpha = 0.4f)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -755,6 +754,8 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
 
                 var lastDeviceName: String? = null
                 var lastDay: Int = -1
+                var lastDeviceLabelEndX = 0f
+                var lastTimeLabelEndX = -100f // Start with offset
                 val calendar = Calendar.getInstance()
 
                 // 3. Map items to X coordinates
@@ -774,8 +775,8 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                         drawText(
                             textMeasurer = textMeasurer,
                             text = daySdf.format(Date(entry.timestamp)),
-                            topLeft = Offset(x + 4.dp.toPx(), height - 12.dp.toPx()),
-                            style = TextStyle(fontSize = 9.sp, color = dayDividerColor, fontWeight = FontWeight.Bold)
+                            topLeft = Offset(x + 4.dp.toPx(), height - 14.dp.toPx()),
+                            style = TextStyle(fontSize = 10.sp, color = dayDividerColor, fontWeight = FontWeight.Bold)
                         )
                     }
                     lastDay = currentDay
@@ -792,24 +793,42 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                             )
                         }
                         entry.deviceName?.let { name ->
+                            val textStyle = TextStyle(fontSize = 10.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                            val measured = textMeasurer.measure(name, textStyle)
+                            val textWidth = measured.size.width
+                            
+                            // Overlap prevention: alternate Y position if too close to last label
+                            val isOverlapping = x < lastDeviceLabelEndX + 8.dp.toPx()
+                            val yOffset = if (isOverlapping) 16.dp.toPx() else 2.dp.toPx()
+                            
                             drawText(
                                 textMeasurer = textMeasurer,
                                 text = name,
-                                topLeft = Offset(x + 4.dp.toPx(), 2.dp.toPx()),
-                                style = TextStyle(fontSize = 8.sp, color = labelColor)
+                                topLeft = Offset(x + 4.dp.toPx(), yOffset),
+                                style = textStyle
                             )
+                            lastDeviceLabelEndX = x + 4.dp.toPx() + textWidth
                         }
                         lastDeviceName = entry.deviceName
                     }
 
                     // Layer 2: Periodic Time Labels
                     if (index % 60 == 0 || index == history.size - 1) {
-                        drawText(
-                            textMeasurer = textMeasurer,
-                            text = timeSdf.format(Date(entry.timestamp)),
-                            topLeft = Offset(x, height / 2 + 2.dp.toPx()),
-                            style = TextStyle(fontSize = 7.sp, color = gridColor)
-                        )
+                        val timeStr = timeSdf.format(Date(entry.timestamp))
+                        val textStyle = TextStyle(fontSize = 9.sp, color = gridColor)
+                        val measured = textMeasurer.measure(timeStr, textStyle)
+                        val textWidth = measured.size.width
+                        
+                        // Only draw if there's enough gap from previous time label
+                        if (x > lastTimeLabelEndX + 32.dp.toPx()) {
+                            drawText(
+                                textMeasurer = textMeasurer,
+                                text = timeStr,
+                                topLeft = Offset(x, height / 2 + 2.dp.toPx()),
+                                style = textStyle
+                            )
+                            lastTimeLabelEndX = x + textWidth
+                        }
                     }
 
                     // Layer 3: Service active background
