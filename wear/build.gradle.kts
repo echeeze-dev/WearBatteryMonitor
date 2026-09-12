@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.wear.tooling.preview)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.guava)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling)
     implementation(libs.guava)

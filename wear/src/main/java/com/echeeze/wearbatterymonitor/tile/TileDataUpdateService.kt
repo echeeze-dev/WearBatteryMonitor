@@ -4,7 +4,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
+import android.content.ComponentName
 import androidx.wear.tiles.TileService
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.echeeze.wearbatterymonitor.complication.MainComplicationService
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
@@ -23,9 +26,13 @@ class TileDataUpdateService : WearableListenerService() {
         for (event in dataEvents) {
             Log.i("TileDataUpdateService", "Event path: ${event.dataItem.uri.path}")
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/battery_status") {
-                Log.d("TileDataUpdateService", "Requesting tile update")
+                Log.d("TileDataUpdateService", "Requesting tile and complication update")
                 TileService.getUpdater(this)
                     .requestUpdate(PhoneBatteryTileService::class.java)
+                
+                ComplicationDataSourceUpdateRequester.create(this, 
+                    ComponentName(this, MainComplicationService::class.java))
+                    .requestUpdateAll()
             }
         }
     }
