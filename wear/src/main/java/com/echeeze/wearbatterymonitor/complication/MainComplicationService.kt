@@ -59,9 +59,11 @@ class MainComplicationService : SuspendingComplicationDataSourceService() {
             contentDescription = PlainComplicationText.Builder(contentDescription).build()
         ).setMonochromaticImage(
             MonochromaticImage.Builder(
-                Icon.createWithResource(this, com.echeeze.wearbatterymonitor.R.drawable.ic_phone_battery)
+                Icon.createWithResource(
+                    this,
+                    if (isCharging) com.echeeze.wearbatterymonitor.R.drawable.ic_phone_charging
+                    else com.echeeze.wearbatterymonitor.R.drawable.ic_phone_battery
+                )
             ).build()
-        ).setTitle(
-            if (isCharging) PlainComplicationText.Builder("⚡").build() else null
         ).build()
 }

@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">WearBatteryMonitor</string>
+    <string name="app_name">BattSync</string>
     <string name="hello_world">Hello, %1$s!</string>
-    <string name="tile_label">Phone Battery Monitor</string>
-    <string name="complication_label">Phone Battery Complication</string>
+    <string name="tile_label">BattSync Tile</string>
+    <string name="complication_label">BattSync Complication</string>
 </resources>
