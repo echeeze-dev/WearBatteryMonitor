@@ -6,17 +6,17 @@
 
     <!-- Safe zone: 18-90 (center 72dp) -->
 
-    <!-- Phone Silhouette -->
+    <!-- Phone Silhouette (Left) -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M48,25L28,25C25.8,25 24,26.8 24,29L24,79C24,81.2 25.8,83 28,83L48,83C50.2,83 52,81.2 52,79L52,29C52,26.8 50.2,25 48,25ZM48,76L28,76L28,32L48,32L48,76Z" />
 
-    <!-- Watch Silhouette -->
+    <!-- Watch Silhouette (Right, I-shape) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M84,54L76,54L76,46C76,44.9 75.1,44 74,44L66,44C64.9,44 64,44.9 64,46L64,54L56,54C54.9,54 54,54.9 54,56L54,64C54,65.1 54.9,66 56,66L64,66L64,74C64,75.1 64.9,76 66,76L74,76C75.1,76 76,75.1 76,74L76,66L84,66C85.1,66 86,65.1 86,64L86,56C86,54.9 85.1,54 84,54ZM70,68C65.6,68 62,64.4 62,60C62,55.6 65.6,52 70,52C74.4,52 78,55.6 78,60C78,64.4 74.4,68 70,68Z" />
+        android:pathData="M74,44L66,44C64.9,44 64,44.9 64,46L64,52C61.8,52 60,53.8 60,56L60,64C60,66.2 61.8,68 64,68L64,74C64,75.1 64.9,76 66,76L74,76C75.1,76 76,75.1 76,74L76,68C78.2,68 80,66.2 80,64L80,56C80,53.8 78.2,52 76,52L76,46C76,44.9 75.1,44 74,44ZM74,66L66,66L66,54L74,54L74,66Z" />
 
-    <!-- Lightning Bolt (Main Sync Symbol) -->
+    <!-- Lightning Bolt (Center Sync Symbol) -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M50,58L50,48L42,48L58,28L58,42L66,42L50,58Z" />
