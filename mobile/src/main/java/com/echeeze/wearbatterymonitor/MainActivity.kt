@@ -519,7 +519,7 @@ fun BatterySection(
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(16.dp))
         val scrollState = rememberScrollState()
-        Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+        Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
             HistoryGraph(history, rangeHours, scrollState) 
         }
         DebugInfoText(history)
@@ -550,14 +550,14 @@ fun EarphoneSection(
         if (isConnected) {
             Spacer(modifier = Modifier.height(16.dp))
             val scrollState = rememberScrollState()
-            Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+            Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
                 HistoryGraph(history, rangeHours, scrollState) 
             }
             DebugInfoText(history)
         } else if (history.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
             val scrollState = rememberScrollState()
-            Box(modifier = Modifier.height(80.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+            Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
                 HistoryGraph(history, rangeHours, scrollState) 
             }
             DebugInfoText(history)
@@ -742,8 +742,32 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
             (totalHours * pxPerHour).coerceAtLeast(viewportWidthPx)
         }
         
-        Box(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
-            Canvas(modifier = Modifier.fillMaxHeight().width(with(LocalDensity.current) { canvasWidthPx.toDp() })) {
+        Column(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
+            val canvasWidthDp = with(LocalDensity.current) { canvasWidthPx.toDp() }
+            
+            // Layer 0: Date Header (Outside the main graph area)
+            Canvas(modifier = Modifier.height(20.dp).width(canvasWidthDp)) {
+                var lastDay: Int = -1
+                val calendar = Calendar.getInstance()
+                history.forEach { entry ->
+                    val x = ((entry.timestamp - minDataTs).toFloat() / totalTimelineDuration) * size.width
+                    calendar.timeInMillis = entry.timestamp
+                    val currentDay = calendar.get(Calendar.DAY_OF_YEAR)
+                    if (lastDay != -1 && currentDay != lastDay) {
+                        drawLine(color = dayDividerColor, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                        drawText(
+                            textMeasurer = textMeasurer,
+                            text = daySdf.format(Date(entry.timestamp)),
+                            topLeft = Offset(x + 4.dp.toPx(), 2.dp.toPx()),
+                            style = TextStyle(fontSize = 11.sp, color = dayDividerColor, fontWeight = FontWeight.Bold)
+                        )
+                    }
+                    lastDay = currentDay
+                }
+            }
+
+            // Main Graph Area
+            Canvas(modifier = Modifier.weight(1f).width(canvasWidthDp)) {
                 val width = size.width
                 val height = size.height
                 
@@ -753,35 +777,15 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                 drawLine(gridColor, start = Offset(0f, height), end = Offset(width, height), strokeWidth = 0.5.dp.toPx())
 
                 var lastDeviceName: String? = null
-                var lastDay: Int = -1
-                var lastDeviceLabelEndX = 0f
-                var lastTimeLabelEndX = -100f // Start with offset
-                val calendar = Calendar.getInstance()
+                var deviceRowIndex = -1
+                var lastTimeLabelEndX = -100f
 
-                // 3. Map items to X coordinates
                 val barWidth = (width / (history.size.coerceAtLeast(1) * 1.2f)).coerceIn(2.dp.toPx(), 12.dp.toPx())
 
                 history.forEachIndexed { index, entry ->
-                    // Linear mapping from time to pixels (Always time-based to show gaps)
                     val x = ((entry.timestamp - minDataTs).toFloat() / totalTimelineDuration) * width
                     
-                    // --- Drawing Layers ---
-
-                    // Layer 0: Day Dividers
-                    calendar.timeInMillis = entry.timestamp
-                    val currentDay = calendar.get(Calendar.DAY_OF_YEAR)
-                    if (lastDay != -1 && currentDay != lastDay) {
-                        drawLine(color = dayDividerColor, start = Offset(x, 0f), end = Offset(x, height), strokeWidth = 1.dp.toPx())
-                        drawText(
-                            textMeasurer = textMeasurer,
-                            text = daySdf.format(Date(entry.timestamp)),
-                            topLeft = Offset(x + 4.dp.toPx(), height - 14.dp.toPx()),
-                            style = TextStyle(fontSize = 10.sp, color = dayDividerColor, fontWeight = FontWeight.Bold)
-                        )
-                    }
-                    lastDay = currentDay
-
-                    // Layer 1: Device Boundary Lines & Labels
+                    // Device Boundary Lines & Labels (5-row rotation to prevent overlap)
                     if (index == 0 || entry.deviceName != lastDeviceName) {
                         if (index > 0) {
                             drawLine(
@@ -793,33 +797,24 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                             )
                         }
                         entry.deviceName?.let { name ->
-                            val textStyle = TextStyle(fontSize = 10.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold)
-                            val measured = textMeasurer.measure(name, textStyle)
-                            val textWidth = measured.size.width
-                            
-                            // Overlap prevention: alternate Y position if too close to last label
-                            val isOverlapping = x < lastDeviceLabelEndX + 8.dp.toPx()
-                            val yOffset = if (isOverlapping) 16.dp.toPx() else 2.dp.toPx()
+                            deviceRowIndex = (deviceRowIndex + 1) % 5
+                            val yOffset = 2.dp.toPx() + (deviceRowIndex * 16.dp.toPx())
                             
                             drawText(
                                 textMeasurer = textMeasurer,
                                 text = name,
                                 topLeft = Offset(x + 4.dp.toPx(), yOffset),
-                                style = textStyle
+                                style = TextStyle(fontSize = 10.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold)
                             )
-                            lastDeviceLabelEndX = x + 4.dp.toPx() + textWidth
                         }
                         lastDeviceName = entry.deviceName
                     }
 
-                    // Layer 2: Periodic Time Labels
+                    // Periodic Time Labels
                     if (index % 60 == 0 || index == history.size - 1) {
                         val timeStr = timeSdf.format(Date(entry.timestamp))
                         val textStyle = TextStyle(fontSize = 9.sp, color = gridColor)
                         val measured = textMeasurer.measure(timeStr, textStyle)
-                        val textWidth = measured.size.width
-                        
-                        // Only draw if there's enough gap from previous time label
                         if (x > lastTimeLabelEndX + 32.dp.toPx()) {
                             drawText(
                                 textMeasurer = textMeasurer,
@@ -827,26 +822,18 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                                 topLeft = Offset(x, height / 2 + 2.dp.toPx()),
                                 style = textStyle
                             )
-                            lastTimeLabelEndX = x + textWidth
+                            lastTimeLabelEndX = x + measured.size.width
                         }
                     }
 
-                    // Layer 3: Service active background
-                    drawRect(
-                        color = serviceActiveBgColor,
-                        topLeft = Offset(x - barWidth / 2, 0f),
-                        size = Size(barWidth, height)
-                    )
+                    // Background for active service
+                    drawRect(color = serviceActiveBgColor, topLeft = Offset(x - barWidth / 2, 0f), size = Size(barWidth, height))
 
-                    // Layer 4: Status line at bottom
+                    // Status line at bottom
                     val statusColor = if (entry.percent >= 0) chargingColor else disconnectedColor
-                    drawRect(
-                        color = statusColor,
-                        topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()),
-                        size = Size(barWidth, 2.dp.toPx())
-                    )
+                    drawRect(color = statusColor, topLeft = Offset(x - barWidth / 2, height - 2.dp.toPx()), size = Size(barWidth, 2.dp.toPx()))
 
-                    // Layer 5: Battery Percent Bar
+                    // Battery Percent Bar
                     if (entry.percent >= 0) {
                         val barHeight = (entry.percent / 100f) * height
                         drawRect(
