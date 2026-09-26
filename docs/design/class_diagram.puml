@@ -1,0 +1,213 @@
+@startuml
+' PlantUML Class Diagram for BattSync (WearBatteryMonitor)
+' Shows current architecture, components, and relationships with Android SDK & Google Wearable Data Layer.
+
+title BattSync (WearBatteryMonitor) - System Architecture & Class Diagram
+
+package "Android SDK / Platform APIs" <<SDK>> {
+    class ComponentActivity
+    class Service
+    class BroadcastReceiver
+    class TileService
+    class SuspendingComplicationDataSourceService
+    class WearableListenerService
+    class BatteryManager
+    class BluetoothProfile
+    class BluetoothHeadset
+}
+
+package "Google Play Services / Wearable Data Layer" <<Library>> {
+    interface DataClient {
+        + putDataItem()
+        + addListener()
+        + getDataItems()
+    }
+    interface MessageClient {
+        + sendMessage()
+        + addListener()
+    }
+    interface CapabilityClient {
+        + getCapability()
+        + addListener()
+    }
+}
+
+package "androidx.room (Database Layer)" <<Library>> {
+    abstract class RoomDatabase
+    interface Dao
+}
+
+' ==========================================
+' Mobile Module (:mobile)
+' ==========================================
+package "com.echeeze.wearbatterymonitor (Mobile Module)" {
+
+    package "mobile.data" {
+        entity BatteryEntry <<Entity>> {
+            + deviceType: String
+            + percent: Int
+            + timestamp: Long
+            + isCharging: Boolean
+            + deviceName: String?
+            + recordReason: String?
+            + intervalSeconds: Int?
+        }
+
+        interface BatteryDao <<Dao>> {
+            + getHistoryByType(type: String): List<BatteryEntry>
+            + insert(entry: BatteryEntry)
+            + trimHistory(type: String, limit: Int)
+        }
+
+        abstract class AppDatabase {
+            + {abstract} batteryDao(): BatteryDao
+            + {static} getDatabase(context): AppDatabase
+        }
+
+        class Constants {
+            + {static} MAX_HISTORY_SIZE: Int
+        }
+    }
+
+    class "MainActivity" as MobileMainActivity <<Activity>> {
+        - batteryPercent: Int
+        - isCharging: Boolean
+        - phoneHistory: List<BatteryEntry>
+        - watchHistory: List<BatteryEntry>
+        - earphoneHistory: List<BatteryEntry>
+        - batteryMonitorService: BatteryMonitorService?
+        - serviceConnection: ServiceConnection
+        - batteryReceiver: BroadcastReceiver
+        + onCreate()
+        + sendBatteryStatusToWear()
+        + loadHistoryFromDb()
+    }
+
+    class BatteryMonitorService <<Service>> {
+        - bluetoothHeadset: BluetoothHeadset?
+        - profileListener: BluetoothProfile.ServiceListener
+        - batteryReceiver: BroadcastReceiver
+        - database: AppDatabase
+        - batteryDao: BatteryDao
+        + currentPhonePercent: Int
+        + currentPhoneCharging: Boolean
+        + currentEarphonePercent: Int?
+        + currentEarphoneName: String?
+        + onCreate()
+        + syncAllData()
+        + updateEarphoneInfo()
+        + requestWatchBatteryUpdate()
+    }
+
+    class MobileWearableListenerService <<WearableListenerService>> {
+        + onMessageReceived(messageEvent: MessageEvent)
+        + onDataChanged(dataEvents: DataEventBuffer)
+        - sendBatteryStatus()
+    }
+}
+
+' ==========================================
+' Wear Module (:wear)
+' ==========================================
+package "com.echeeze.wearbatterymonitor (Wear Module)" {
+
+    package "wear.data" {
+        class "BatteryEntry" as WearBatteryEntry {
+            + deviceType: String
+            + percent: Int
+            + timestamp: Long
+            + isCharging: Boolean
+            + deviceName: String?
+        }
+    }
+
+    package "wear.presentation" {
+        enum ConnectionState {
+            Initializing
+            Disconnected
+            AppNotInstalled
+            NoData
+            Active
+            Offline
+        }
+
+        class "MainActivity" as WearMainActivity <<Activity>> {
+            - connectionState: ConnectionState
+            - watchBatteryPercent: Int
+            - watchIsCharging: Boolean
+            - phoneHistory: List<BatteryEntry>
+            - earphoneHistory: List<BatteryEntry>
+            - watchHistory: List<BatteryEntry>
+            - watchBatteryReceiver: BroadcastReceiver
+            + onCreate()
+            + onResume()
+            + updateWatchBattery()
+            + sendWatchBatteryToPhone()
+            + checkStatus()
+        }
+    }
+
+    package "wear.tile" {
+        class PhoneBatteryTileService <<TileService>> {
+            + onTileRequest(requestParams): ListenableFuture<Tile>
+            + onTileResourcesRequest(requestParams): ListenableFuture<Resources>
+        }
+
+        class TileDataUpdateService <<TileService>> {
+            + onTileRequest(requestParams): ListenableFuture<Tile>
+        }
+    }
+
+    package "wear.complication" {
+        class MainComplicationService <<Complication>> {
+            + getPreviewData(type): ComplicationData?
+            + onComplicationRequest(request): ComplicationData?
+        }
+    }
+}
+
+' ==========================================
+' Relationships & Inheritances
+' ==========================================
+
+' Inheritance from Android SDK
+ComponentActivity <|-- MobileMainActivity
+ComponentActivity <|-- WearMainActivity
+Service <|-- BatteryMonitorService
+WearableListenerService <|-- MobileWearableListenerService
+TileService <|-- PhoneBatteryTileService
+TileService <|-- TileDataUpdateService
+SuspendingComplicationDataSourceService <|-- MainComplicationService
+RoomDatabase <|-- AppDatabase
+
+' Room DB Relationships
+AppDatabase --> BatteryDao : provides
+BatteryDao ..> BatteryEntry : uses
+BatteryMonitorService --> AppDatabase : uses
+BatteryMonitorService --> BatteryDao : uses
+MobileMainActivity --> AppDatabase : uses
+MobileMainActivity --> BatteryDao : uses
+
+' Service Connection
+MobileMainActivity o-- BatteryMonitorService : binds via ServiceConnection
+
+' Android System API Interactions
+BatteryMonitorService ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
+BatteryMonitorService ..> BluetoothHeadset : connects via ServiceListener
+MobileMainActivity ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
+WearMainActivity ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
+
+' Google Wearable Data Layer Interactions
+MobileMainActivity ..> DataClient : sends /battery_status
+MobileMainActivity ..> MessageClient : listens /request_battery_update
+BatteryMonitorService ..> DataClient : listens /watch_battery, sends /battery_status
+MobileWearableListenerService ..> DataClient : sends /battery_status
+MobileWearableListenerService ..> MessageClient : handles /request_battery_update
+
+WearMainActivity ..> DataClient : sends /watch_battery, receives /battery_status
+WearMainActivity ..> MessageClient : sends /request_battery_update
+WearMainActivity ..> CapabilityClient : checks "battery_monitor_phone_app"
+PhoneBatteryTileService ..> DataClient : reads /battery_status & /settings/graph_range
+MainComplicationService ..> DataClient : reads /battery_status
+
+@enduml
