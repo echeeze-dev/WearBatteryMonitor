@@ -27,7 +27,6 @@ import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
-import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.echeeze.wearbatterymonitor.data.AppDatabase
 import com.echeeze.wearbatterymonitor.data.BatteryRepository

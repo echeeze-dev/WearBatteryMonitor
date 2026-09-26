@@ -10,9 +10,6 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.echeeze.wearbatterymonitor.data.WearBatteryRepositoryImpl
-import com.google.android.gms.wearable.DataMapItem
-import com.google.android.gms.wearable.Wearable
-import kotlinx.coroutines.tasks.await
 
 /**
  * Skeleton for complication data source that returns short text.

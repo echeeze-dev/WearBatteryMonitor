@@ -25,8 +25,6 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.echeeze.wearbatterymonitor.data.WearBatteryRepository
 import com.echeeze.wearbatterymonitor.data.WearBatteryRepositoryImpl
-import com.google.android.gms.wearable.DataMapItem
-import com.google.android.gms.wearable.Wearable
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
