@@ -9,6 +9,7 @@ import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import com.echeeze.wearbatterymonitor.data.WearBatteryRepositoryImpl
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.tasks.await
@@ -34,15 +35,12 @@ class MainComplicationService : SuspendingComplicationDataSourceService() {
         var isCharging = false
 
         try {
-            val dataClient = Wearable.getDataClient(this)
-            val dataItems = dataClient.dataItems.await()
-            val batteryItem = dataItems.find { it.uri.path == "/battery_status" }
-            if (batteryItem != null) {
-                val dataMap = DataMapItem.fromDataItem(batteryItem).dataMap
-                percent = dataMap.getInt("battery_percent")
-                isCharging = dataMap.getBoolean("is_charging")
+            val repository = WearBatteryRepositoryImpl(this)
+            val status = repository.getPhoneBatteryStatus()
+            if (status != null) {
+                percent = status.percent
+                isCharging = status.isCharging
             }
-            dataItems.release()
         } catch (e: Exception) {
             Log.e("MainComplication", "Error fetching battery status", e)
         }

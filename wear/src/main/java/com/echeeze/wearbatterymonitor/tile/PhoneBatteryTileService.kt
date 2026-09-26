@@ -23,6 +23,8 @@ import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.RequestBuilders.ResourcesRequest
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
+import com.echeeze.wearbatterymonitor.data.WearBatteryRepository
+import com.echeeze.wearbatterymonitor.data.WearBatteryRepositoryImpl
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.google.common.util.concurrent.Futures
@@ -38,16 +40,17 @@ private const val RESOURCES_VERSION = "1"
 
 class PhoneBatteryTileService : TileService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO)
+    private lateinit var repository: WearBatteryRepository
 
     override fun onCreate() {
         super.onCreate()
+        repository = WearBatteryRepositoryImpl(this)
         Log.i("PhoneBatteryTileService", "onCreate")
     }
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> =
         serviceScope.future {
             Log.d("PhoneBatteryTileService", "onTileRequest started")
-            val dataClient = Wearable.getDataClient(this@PhoneBatteryTileService)
             
             var percent = 0
             var isCharging = false
@@ -56,27 +59,14 @@ class PhoneBatteryTileService : TileService() {
             val history = mutableListOf<Triple<Int, Boolean, Long>>()
 
             try {
-                val dataItems = com.google.android.gms.tasks.Tasks.await(dataClient.dataItems)
-                
-                // Get range settings
-                dataItems.find { it.uri.path == "/settings/graph_range" }?.let { item ->
-                    rangeHours = DataMapItem.fromDataItem(item).dataMap.getInt("range_hours", 1)
+                val status = repository.getPhoneBatteryStatus()
+                if (status != null) {
+                    percent = status.percent
+                    isCharging = status.isCharging
+                    timestamp = status.timestamp
+                    rangeHours = status.rangeHours
+                    history.addAll(status.phoneHistory)
                 }
-
-                val batteryItem = dataItems.find { it.uri.path == "/battery_status" }
-                if (batteryItem != null) {
-                    val dataMap = DataMapItem.fromDataItem(batteryItem).dataMap
-                    percent = dataMap.getInt("battery_percent")
-                    isCharging = dataMap.getBoolean("is_charging")
-                    timestamp = dataMap.getLong("timestamp")
-                    
-                    dataMap.getDataMapArrayList("phone_history")?.let { list ->
-                        list.forEach { entryMap ->
-                            history.add(Triple(entryMap.getInt("p"), entryMap.getBoolean("c"), entryMap.getLong("t")))
-                        }
-                    }
-                }
-                dataItems.release()
             } catch (e: Exception) {
                 Log.e("PhoneBatteryTileService", "Error fetching data", e)
             }

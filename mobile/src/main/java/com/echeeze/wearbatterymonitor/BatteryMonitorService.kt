@@ -30,6 +30,8 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.echeeze.wearbatterymonitor.data.AppDatabase
+import com.echeeze.wearbatterymonitor.data.BatteryRepository
+import com.echeeze.wearbatterymonitor.data.BatteryRepositoryImpl
 import kotlinx.coroutines.*
 import java.util.Timer
 import java.util.TimerTask
@@ -61,6 +63,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var database: AppDatabase
     private lateinit var batteryDao: com.echeeze.wearbatterymonitor.data.BatteryDao
+    private lateinit var repository: BatteryRepository
 
     private val CHANNEL_ID = "battery_monitor_channel"
     private val NOTIFICATION_ID = 1
@@ -125,6 +128,7 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         super.onCreate()
         database = AppDatabase.getDatabase(this)
         batteryDao = database.batteryDao()
+        repository = BatteryRepositoryImpl(this, batteryDao)
         loadHistoryFromDb()
         
         createNotificationChannel()
@@ -248,16 +252,15 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
         if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
         
         serviceScope.launch {
-            batteryDao.insert(entry)
-            batteryDao.trimHistory(type, Constants.MAX_HISTORY_SIZE)
+            repository.insertEntry(entry)
         }
     }
 
     private fun loadHistoryFromDb() {
         serviceScope.launch {
-            val phoneData = batteryDao.getHistoryByType("phone")
-            val watchData = batteryDao.getHistoryByType("watch")
-            val earphoneData = batteryDao.getHistoryByType("earphone")
+            val phoneData = repository.getHistoryByType("phone")
+            val watchData = repository.getHistoryByType("watch")
+            val earphoneData = repository.getHistoryByType("earphone")
             
             withContext(Dispatchers.Main) {
                 phoneHistory.clear(); phoneHistory.addAll(phoneData)
@@ -391,47 +394,18 @@ class BatteryMonitorService : Service(), DataClient.OnDataChangedListener {
     }
 
     private fun syncAllData() {
-        val dataClient = Wearable.getDataClient(this)
-        val putDataMapReq = PutDataMapRequest.create("/battery_status")
-        putDataMapReq.dataMap.putInt("battery_percent", currentPhonePercent)
-        putDataMapReq.dataMap.putBoolean("is_charging", currentPhoneCharging)
-        currentEarphonePercent?.let { putDataMapReq.dataMap.putInt("earphone_percent", it) }
-        currentEarphoneName?.let { putDataMapReq.dataMap.putString("earphone_name", it) }
-        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
-        
-        // Add history data (downsampled to 400 items each to fit 100KB limit and improve performance)
-        putDataMapReq.dataMap.putDataMapArrayList("phone_history", historyToDataMapList(downsampleHistory(phoneHistory, 400)))
-        putDataMapReq.dataMap.putDataMapArrayList("watch_history", historyToDataMapList(downsampleHistory(watchHistory, 400)))
-        putDataMapReq.dataMap.putDataMapArrayList("earphone_history", historyToDataMapList(downsampleHistory(earphoneHistory, 400)))
-
-        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
-        dataClient.putDataItem(putDataReq)
+        serviceScope.launch {
+            repository.syncStatusToWear(
+                phonePercent = currentPhonePercent,
+                isCharging = currentPhoneCharging,
+                earphonePercent = currentEarphonePercent,
+                earphoneName = currentEarphoneName,
+                phoneHistory = phoneHistory,
+                watchHistory = watchHistory,
+                earphoneHistory = earphoneHistory
+            )
+        }
     }
 
-    private fun historyToDataMapList(history: List<BatteryEntry>): ArrayList<com.google.android.gms.wearable.DataMap> {
-        val list = ArrayList<com.google.android.gms.wearable.DataMap>()
-        history.forEach { entry ->
-            val dm = com.google.android.gms.wearable.DataMap()
-            dm.putInt("p", entry.percent)
-            dm.putLong("t", entry.timestamp)
-            dm.putBoolean("c", entry.isCharging)
-            list.add(dm)
-        }
-        return list
-    }
 
-    private fun downsampleHistory(history: List<BatteryEntry>, @Suppress("SameParameterValue") targetSize: Int): List<BatteryEntry> {
-        if (history.size <= targetSize) return history
-        val step = history.size.toDouble() / targetSize
-        val result = mutableListOf<BatteryEntry>()
-        for (i in 0 until targetSize) {
-            val index = (i * step).toInt().coerceAtMost(history.size - 1)
-            result.add(history[index])
-        }
-        // Ensure latest is included
-        if (result.last().timestamp != history.last().timestamp) {
-            result[result.size - 1] = history.last()
-        }
-        return result
-    }
 }

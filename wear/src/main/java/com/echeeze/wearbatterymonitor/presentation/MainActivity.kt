@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -37,6 +38,8 @@ import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
 import com.echeeze.wearbatterymonitor.data.Constants
+import com.echeeze.wearbatterymonitor.data.WearBatteryRepository
+import com.echeeze.wearbatterymonitor.data.WearBatteryRepositoryImpl
 import com.echeeze.wearbatterymonitor.presentation.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
 import kotlinx.coroutines.launch
@@ -68,9 +71,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         override fun onReceive(context: Context, intent: Intent) { updateWatchBattery() }
     }
 
+    private lateinit var repository: WearBatteryRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        repository = WearBatteryRepositoryImpl(this)
         updateWatchBattery()
         setContent {
             WearApp(connectionState, watchBatteryPercent, watchIsCharging, phoneHistory, earphoneHistory, watchHistory, graphRangeHours)
@@ -124,14 +130,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     }
 
     private fun sendWatchBatteryToPhone(reason: String = "INITIAL_FETCH") {
-        val putDataReq = PutDataMapRequest.create("/watch_battery").apply {
-            dataMap.putInt("watch_percent", watchBatteryPercent)
-            dataMap.putBoolean("watch_is_charging", watchIsCharging)
-            dataMap.putString("device_name", Build.MODEL)
-            dataMap.putString("record_reason", reason)
-            dataMap.putLong("timestamp", System.currentTimeMillis())
-        }.asPutDataRequest().setUrgent()
-        Wearable.getDataClient(this).putDataItem(putDataReq)
+        lifecycleScope.launch {
+            repository.sendWatchBatteryToPhone(
+                percent = watchBatteryPercent,
+                isCharging = watchIsCharging,
+                deviceName = Build.MODEL,
+                recordReason = reason
+            )
+        }
     }
 
     private fun checkStatus() {
@@ -143,11 +149,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
                 Wearable.getDataClient(this).dataItems.addOnSuccessListener { items ->
                     items.find { it.uri.path == "/battery_status" }?.let { updateStateFromDataMap(DataMapItem.fromDataItem(it).dataMap, info.nodes.any { n -> n.isNearby }) } ?: run { connectionState = ConnectionState.NoData }
                     items.release()
-                }
-                info.nodes.forEach { 
-                    Wearable.getMessageClient(this).sendMessage(it.id, "/request_battery_update", null) 
-                    // Respond to phone's request with a specific reason
-                    sendWatchBatteryToPhone("WEAR_REQUEST")
                 }
             }
         }
@@ -288,20 +289,34 @@ fun EarphoneCard(ep: Int?, name: String?, timestamp: Long, isOffline: Boolean, h
 
 @Composable
 fun HistoryGraphFixed(history: List<BatteryEntry>, isOffline: Boolean, rangeHours: Int) {
-    if (history.isEmpty()) return
     val now = System.currentTimeMillis()
+    val startTime = if (rangeHours == 0) {
+        history.minByOrNull { it.timestamp }?.timestamp ?: now
+    } else {
+        now - (rangeHours * 3600000L)
+    }
+
+    // Filter by time range and valid battery levels
+    val filteredData = history.filter { it.timestamp >= startTime }
+    val validBatteryData = filteredData.filter { it.percent >= 0 }
+
+    // If no valid data is available, display a clean "No Data" state instead of incomplete graph
+    if (history.isEmpty() || filteredData.isEmpty() || validBatteryData.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "データなし",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray.copy(alpha = 0.5f)
+            )
+        }
+        return
+    }
+
     val oldestTimestamp = history.minByOrNull { it.timestamp }?.timestamp ?: now
     val totalDuration = (now - oldestTimestamp).coerceAtLeast(1L)
-    
-    val startTime = if (rangeHours == 0) oldestTimestamp else now - (rangeHours * 3600000L)
     val viewportDuration = if (rangeHours == 0) totalDuration else (rangeHours * 3600000L)
-    
-    // 1. Filter by time range
-    val filteredData = history.filter { it.timestamp >= startTime }
-    if (filteredData.isEmpty()) return
 
-    // 2. Downsample for rendering performance if there are too many items
-    // We aim for roughly 1 bar per 2 physical pixels of width (approx 150-200 bars)
+    // Downsample for rendering performance if there are too many items
     val maxBars = 150
     val data = if (filteredData.size > maxBars) {
         val step = filteredData.size.toDouble() / maxBars

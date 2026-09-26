@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
 import androidx.core.content.edit
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
@@ -55,6 +56,8 @@ import androidx.core.content.ContextCompat
 import com.echeeze.wearbatterymonitor.data.AppDatabase
 import com.echeeze.wearbatterymonitor.data.BatteryDao
 import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.data.BatteryRepository
+import com.echeeze.wearbatterymonitor.data.BatteryRepositoryImpl
 import com.echeeze.wearbatterymonitor.data.Constants
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
 import com.google.android.gms.wearable.*
@@ -74,10 +77,12 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private var isServiceRunning by mutableStateOf(false)
     private var graphRangeHours by mutableIntStateOf(3)
     private var updateIntervalSeconds by mutableIntStateOf(60)
+    private var isLoading by mutableStateOf(true)
 
     private val activityScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var database: AppDatabase
     private lateinit var batteryDao: BatteryDao
+    private lateinit var repository: BatteryRepository
 
     // In-memory history for now to fix startup crash
     private val phoneHistory = mutableStateListOf<BatteryEntry>()
@@ -100,15 +105,29 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     private fun syncHistoryFromService() {
         batteryMonitorService?.let { service ->
-            phoneHistory.clear(); phoneHistory.addAll(service.phoneHistory)
-            watchHistory.clear(); watchHistory.addAll(service.watchHistory)
-            earphoneHistory.clear(); earphoneHistory.addAll(service.earphoneHistory)
+            val phoneData = service.phoneHistory.toList()
+            val watchData = service.watchHistory.toList()
+            val earphoneData = service.earphoneHistory.toList()
             
-            // Sync current states
-            batteryPercent = service.currentPhonePercent
-            isCharging = service.currentPhoneCharging
-            earphonePercent = service.currentEarphonePercent
-            earphoneName = service.currentEarphoneName
+            activityScope.launch(Dispatchers.Main) {
+                if (phoneHistory != phoneData) {
+                    phoneHistory.clear()
+                    phoneHistory.addAll(phoneData)
+                }
+                if (watchHistory != watchData) {
+                    watchHistory.clear()
+                    watchHistory.addAll(watchData)
+                }
+                if (earphoneHistory != earphoneData) {
+                    earphoneHistory.clear()
+                    earphoneHistory.addAll(earphoneData)
+                }
+                
+                batteryPercent = service.currentPhonePercent
+                isCharging = service.currentPhoneCharging
+                earphonePercent = service.currentEarphonePercent
+                earphoneName = service.currentEarphoneName
+            }
         }
     }
 
@@ -135,6 +154,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         super.onCreate(savedInstanceState)
         database = AppDatabase.getDatabase(this)
         batteryDao = database.batteryDao()
+        repository = BatteryRepositoryImpl(this, batteryDao)
         
         enableEdgeToEdge()
         val sharedPref = getPreferences(MODE_PRIVATE)
@@ -152,25 +172,46 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         setContent {
             WearBatteryMonitorTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    BatteryMonitorScreen(
-                        phonePercent = batteryPercent,
-                        phoneIsCharging = isCharging,
-                        phoneHistory = phoneHistory,
-                        watchPercent = watchPercent,
-                        watchIsCharging = watchIsCharging,
-                        watchHistory = watchHistory,
-                        earphonePercent = earphonePercent,
-                        earphoneName = earphoneName,
-                        earphoneHistory = earphoneHistory,
-                        isServiceRunning = isServiceRunning,
-                        onServiceToggle = { toggleService(it) },
-                        graphRangeHours = graphRangeHours,
-                        onGraphRangeChange = { updateGraphRange(it) },
-                        updateIntervalSeconds = updateIntervalSeconds,
-                        onIntervalChange = { updateInterval(it) },
-                        watchName = watchName,
+                    Crossfade(
+                        targetState = isLoading,
                         modifier = Modifier.padding(innerPadding)
-                    )
+                    ) { loading ->
+                        if (loading) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator()
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "読み込み中...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                        } else {
+                            BatteryMonitorScreen(
+                                phonePercent = batteryPercent,
+                                phoneIsCharging = isCharging,
+                                phoneHistory = phoneHistory,
+                                watchPercent = watchPercent,
+                                watchIsCharging = watchIsCharging,
+                                watchHistory = watchHistory,
+                                earphonePercent = earphonePercent,
+                                earphoneName = earphoneName,
+                                earphoneHistory = earphoneHistory,
+                                isServiceRunning = isServiceRunning,
+                                onServiceToggle = { toggleService(it) },
+                                graphRangeHours = graphRangeHours,
+                                onGraphRangeChange = { updateGraphRange(it) },
+                                updateIntervalSeconds = updateIntervalSeconds,
+                                onIntervalChange = { updateInterval(it) },
+                                watchName = watchName
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -208,8 +249,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             if (list.size > Constants.MAX_HISTORY_SIZE) list.removeAt(0)
             
             activityScope.launch(Dispatchers.IO) {
-                batteryDao.insert(entry)
-                batteryDao.trimHistory(type, Constants.MAX_HISTORY_SIZE)
+                repository.insertEntry(entry)
             }
         } else {
             // If running, we sync from service periodically or on demand
@@ -219,14 +259,15 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     private fun loadHistoryFromDb() {
         activityScope.launch(Dispatchers.IO) {
-            val phoneData = batteryDao.getHistoryByType("phone")
-            val watchData = batteryDao.getHistoryByType("watch")
-            val earphoneData = batteryDao.getHistoryByType("earphone")
+            val phoneData = repository.getHistoryByType("phone")
+            val watchData = repository.getHistoryByType("watch")
+            val earphoneData = repository.getHistoryByType("earphone")
             
             activityScope.launch(Dispatchers.Main) {
                 phoneHistory.clear(); phoneHistory.addAll(phoneData)
                 watchHistory.clear(); watchHistory.addAll(watchData)
                 earphoneHistory.clear(); earphoneHistory.addAll(earphoneData)
+                isLoading = false
             }
         }
     }
@@ -517,12 +558,14 @@ fun BatterySection(
         }
         Text(text = if (isDisconnected) "Disconnected" else "$percent%", style = MaterialTheme.typography.displayLarge, color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
         if (!isDisconnected && isCharging) Text("Charging", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF4CAF50))
-        Spacer(modifier = Modifier.height(16.dp))
-        val scrollState = rememberScrollState()
-        Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
-            HistoryGraph(history, rangeHours, scrollState) 
+        if (history.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            val scrollState = rememberScrollState()
+            Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
+                HistoryGraph(history, rangeHours, scrollState) 
+            }
+            DebugInfoText(history)
         }
-        DebugInfoText(history)
     }
 }
 
@@ -547,14 +590,7 @@ fun EarphoneSection(
             style = MaterialTheme.typography.displayLarge,
             color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
         )
-        if (isConnected) {
-            Spacer(modifier = Modifier.height(16.dp))
-            val scrollState = rememberScrollState()
-            Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 
-                HistoryGraph(history, rangeHours, scrollState) 
-            }
-            DebugInfoText(history)
-        } else if (history.isNotEmpty()) {
+        if (history.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
             val scrollState = rememberScrollState()
             Box(modifier = Modifier.height(120.dp).fillMaxWidth(0.9f).clickable { onGraphClick() }) { 

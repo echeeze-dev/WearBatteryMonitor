@@ -1,6 +1,6 @@
 @startuml
 ' PlantUML Class Diagram for BattSync (WearBatteryMonitor)
-' Shows current architecture, components, and relationships with Android SDK & Google Wearable Data Layer.
+' Shows current architecture, components, repository pattern, and relationships with Android SDK & Google Wearable Data Layer.
 
 title BattSync (WearBatteryMonitor) - System Architecture & Class Diagram
 
@@ -64,6 +64,22 @@ package "com.echeeze.wearbatterymonitor (Mobile Module)" {
             + {static} getDatabase(context): AppDatabase
         }
 
+        interface BatteryRepository {
+            + getHistoryByType(type: String): List<BatteryEntry>
+            + insertEntry(entry: BatteryEntry)
+            + trimHistory(type: String, limit: Int)
+            + syncStatusToWear(...)
+        }
+
+        class BatteryRepositoryImpl {
+            - context: Context
+            - batteryDao: BatteryDao
+            + getHistoryByType(type: String): List<BatteryEntry>
+            + insertEntry(entry: BatteryEntry)
+            + trimHistory(type: String, limit: Int)
+            + syncStatusToWear(...)
+        }
+
         class Constants {
             + {static} MAX_HISTORY_SIZE: Int
         }
@@ -75,6 +91,7 @@ package "com.echeeze.wearbatterymonitor (Mobile Module)" {
         - phoneHistory: List<BatteryEntry>
         - watchHistory: List<BatteryEntry>
         - earphoneHistory: List<BatteryEntry>
+        - repository: BatteryRepository
         - batteryMonitorService: BatteryMonitorService?
         - serviceConnection: ServiceConnection
         - batteryReceiver: BroadcastReceiver
@@ -89,6 +106,7 @@ package "com.echeeze.wearbatterymonitor (Mobile Module)" {
         - batteryReceiver: BroadcastReceiver
         - database: AppDatabase
         - batteryDao: BatteryDao
+        - repository: BatteryRepository
         + currentPhonePercent: Int
         + currentPhoneCharging: Boolean
         + currentEarphonePercent: Int?
@@ -180,13 +198,16 @@ TileService <|-- TileDataUpdateService
 SuspendingComplicationDataSourceService <|-- MainComplicationService
 RoomDatabase <|-- AppDatabase
 
+' Repository Pattern Realization
+BatteryRepository <|.. BatteryRepositoryImpl
+BatteryRepositoryImpl --> BatteryDao : uses
+BatteryRepositoryImpl ..> DataClient : syncs data via
+
 ' Room DB Relationships
 AppDatabase --> BatteryDao : provides
 BatteryDao ..> BatteryEntry : uses
-BatteryMonitorService --> AppDatabase : uses
-BatteryMonitorService --> BatteryDao : uses
-MobileMainActivity --> AppDatabase : uses
-MobileMainActivity --> BatteryDao : uses
+MobileMainActivity --> BatteryRepository : uses
+BatteryMonitorService --> BatteryRepository : uses
 
 ' Service Connection
 MobileMainActivity o-- BatteryMonitorService : binds via ServiceConnection
@@ -200,7 +221,7 @@ WearMainActivity ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
 ' Google Wearable Data Layer Interactions
 MobileMainActivity ..> DataClient : sends /battery_status
 MobileMainActivity ..> MessageClient : listens /request_battery_update
-BatteryMonitorService ..> DataClient : listens /watch_battery, sends /battery_status
+BatteryMonitorService ..> DataClient : listens /watch_battery
 MobileWearableListenerService ..> DataClient : sends /battery_status
 MobileWearableListenerService ..> MessageClient : handles /request_battery_update
 
