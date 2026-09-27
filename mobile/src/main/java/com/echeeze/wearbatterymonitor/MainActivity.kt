@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
+import kotlin.time.Duration.Companion.milliseconds
 import androidx.core.content.edit
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
@@ -292,7 +293,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
                 fetchCurrentBatteryState()
                 
                 // Ensure Compose recomposition and layout calculation complete before hiding loading indicator
-                delay(200)
+                delay(200.milliseconds)
                 isLoading = false
             }
         }
