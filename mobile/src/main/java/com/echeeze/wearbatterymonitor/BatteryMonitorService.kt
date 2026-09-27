@@ -75,11 +75,11 @@ class BatteryMonitorService : Service() {
             notificationHelper.updateNotification(percent, isCharging)
         }
 
-        earphoneMonitor = EarphoneBatteryMonitor(this) { percent, name ->
+        earphoneMonitor = EarphoneBatteryMonitor(this) { percent, name, reason ->
             currentEarphonePercent = percent
             currentEarphoneName = name
-            percent?.let {
-                addHistory(earphoneHistory, "earphone", it, false, name, "BT_BATTERY_CHANGED")
+            if (percent != null || name != null) {
+                addHistory(earphoneHistory, "earphone", percent ?: -1, false, name, reason)
                 syncAllData()
             }
         }

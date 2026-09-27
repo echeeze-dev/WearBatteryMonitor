@@ -25,7 +25,7 @@ import androidx.core.app.ActivityCompat
  */
 class EarphoneBatteryMonitor(
     private val context: Context,
-    private val onEarphoneChanged: (percent: Int?, name: String?) -> Unit
+    private val onEarphoneChanged: (percent: Int?, name: String?, reason: String) -> Unit
 ) {
 
     private var bluetoothHeadset: BluetoothHeadset? = null
@@ -74,7 +74,7 @@ class EarphoneBatteryMonitor(
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             context.registerReceiver(bluetoothReceiver, filter)
         }
@@ -114,6 +114,7 @@ class EarphoneBatteryMonitor(
             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
         }
         val batteryLevel = intent.getIntExtra("android.bluetooth.device.extra.BATTERY_LEVEL", -1)
+        val reason = if (intent.action == "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED") "BT_BATTERY_CHANGED" else "BT_CONNECTION"
 
         if (device != null) {
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
@@ -123,7 +124,7 @@ class EarphoneBatteryMonitor(
 
                 val percent = if (batteryLevel != -1) batteryLevel else null
                 val name = device.name
-                onEarphoneChanged(percent, name)
+                onEarphoneChanged(percent, name, reason)
                 return
             }
         }
@@ -143,11 +144,11 @@ class EarphoneBatteryMonitor(
             try {
                 val method = device.javaClass.getMethod("getBatteryLevel")
                 val level = method.invoke(device) as Int
-                if (level != -1) {
-                    onEarphoneChanged(level, device.name)
-                }
+                val percent = if (level != -1) level else null
+                onEarphoneChanged(percent, device.name, "BT_CONNECTION")
             } catch (e: Exception) {
                 Log.d("EarphoneBatteryMonitor", "Could not reflect getBatteryLevel: ${e.message}")
+                onEarphoneChanged(null, device.name, "BT_CONNECTION")
             }
         }
     }
@@ -161,7 +162,7 @@ class EarphoneBatteryMonitor(
         }
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
             if (device != null) {
-                onEarphoneChanged(null, null)
+                onEarphoneChanged(null, null, "BT_CONNECTION")
             }
         }
     }

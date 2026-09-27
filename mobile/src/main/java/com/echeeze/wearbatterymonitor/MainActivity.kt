@@ -118,10 +118,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        earphoneMonitor = EarphoneBatteryMonitor(this) { percent, name ->
+        earphoneMonitor = EarphoneBatteryMonitor(this) { percent, name, reason ->
             viewModel.updateEarphoneBattery(percent, name)
-            if (!viewModel.uiState.value.isServiceRunning && percent != null) {
-                viewModel.addHistoryEntry(BatteryEntry("earphone", percent, System.currentTimeMillis(), false, name, "BT_BATTERY_CHANGED"))
+            if (!viewModel.uiState.value.isServiceRunning && (percent != null || name != null)) {
+                viewModel.addHistoryEntry(BatteryEntry("earphone", percent ?: -1, System.currentTimeMillis(), false, name, reason))
             }
         }
 
@@ -227,6 +227,9 @@ class MainActivity : ComponentActivity() {
             viewModel.updateEarphoneBattery(service.currentEarphonePercent, service.currentEarphoneName)
             if (service.currentWatchName != null) {
                 viewModel.updateWatchName(service.currentWatchName)
+            }
+            if (service.phoneHistory.isNotEmpty()) {
+                viewModel.loadHistoryFromDb()
             }
         }
     }
