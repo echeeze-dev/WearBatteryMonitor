@@ -1,15 +1,50 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/DALVIK Virtual Machine
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+**/build/
+.gradle/
+.kotlin/
 /captures
-.externalNativeBuild
-.cxx
+
+# Android Studio / IntelliJ IDEA
+*.iml
+.idea/
+!.idea/copyright/
+!.idea/codeStyles/
+
+# Local configuration file (sdk path, etc)
 local.properties
+/local.properties
+
+# Signing files / Secrets (CRITICAL for Security)
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+*.p12
+*.pem
+
+# Log files
+*.log
+hs_err_pid*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Android Studio Profiler / Captures
+captures/
+
+# Artifacts & Scratch files
+.artifacts/
