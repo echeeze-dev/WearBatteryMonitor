@@ -257,16 +257,42 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
         }
     }
 
+    private fun fetchCurrentBatteryState() {
+        val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        if (level != -1 && scale != -1) {
+            batteryPercent = (level * 100 / scale.toFloat()).toInt()
+        }
+        batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)?.let {
+            isCharging = (it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL)
+        }
+    }
+
     private fun loadHistoryFromDb() {
         activityScope.launch(Dispatchers.IO) {
             val phoneData = repository.getHistoryByType("phone")
             val watchData = repository.getHistoryByType("watch")
             val earphoneData = repository.getHistoryByType("earphone")
             
-            activityScope.launch(Dispatchers.Main) {
-                phoneHistory.clear(); phoneHistory.addAll(phoneData)
-                watchHistory.clear(); watchHistory.addAll(watchData)
-                earphoneHistory.clear(); earphoneHistory.addAll(earphoneData)
+            withContext(Dispatchers.Main) {
+                if (phoneHistory != phoneData) {
+                    phoneHistory.clear()
+                    phoneHistory.addAll(phoneData)
+                }
+                if (watchHistory != watchData) {
+                    watchHistory.clear()
+                    watchHistory.addAll(watchData)
+                }
+                if (earphoneHistory != earphoneData) {
+                    earphoneHistory.clear()
+                    earphoneHistory.addAll(earphoneData)
+                }
+                
+                fetchCurrentBatteryState()
+                
+                // Ensure Compose recomposition and layout calculation complete before hiding loading indicator
+                delay(200)
                 isLoading = false
             }
         }
