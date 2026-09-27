@@ -33,22 +33,29 @@ class BatteryRepositoryImpl(
         earphoneName: String?,
         phoneHistory: List<BatteryEntry>,
         watchHistory: List<BatteryEntry>,
-        earphoneHistory: List<BatteryEntry>
+        earphoneHistory: List<BatteryEntry>,
+        rangeHours: Int
     ): Unit = withContext(Dispatchers.IO) {
         try {
+            // DBから最新の完全な履歴データをロードして同期データの整合性を100%保証する
+            val dbPhoneHistory = batteryDao.getHistoryByType("phone").ifEmpty { phoneHistory }
+            val dbWatchHistory = batteryDao.getHistoryByType("watch").ifEmpty { watchHistory }
+            val dbEarphoneHistory = batteryDao.getHistoryByType("earphone").ifEmpty { earphoneHistory }
+
             val dataClient = Wearable.getDataClient(context)
             val putDataMapReq = PutDataMapRequest.create("/battery_status")
             val dataMap = putDataMapReq.dataMap
             dataMap.putInt("battery_percent", phonePercent)
             dataMap.putBoolean("is_charging", isCharging)
+            dataMap.putInt("range_hours", rangeHours)
             dataMap.putLong("timestamp", System.currentTimeMillis())
 
             earphonePercent?.let { dataMap.putInt("earphone_percent", it) }
             earphoneName?.let { dataMap.putString("earphone_name", it) }
 
-            dataMap.putDataMapArrayList("phone_history", historyToDataMapList(downsampleHistory(phoneHistory, 400)))
-            dataMap.putDataMapArrayList("watch_history", historyToDataMapList(downsampleHistory(watchHistory, 400)))
-            dataMap.putDataMapArrayList("earphone_history", historyToDataMapList(downsampleHistory(earphoneHistory, 400)))
+            dataMap.putDataMapArrayList("phone_history", historyToDataMapList(downsampleHistory(dbPhoneHistory, 400)))
+            dataMap.putDataMapArrayList("watch_history", historyToDataMapList(downsampleHistory(dbWatchHistory, 400)))
+            dataMap.putDataMapArrayList("earphone_history", historyToDataMapList(downsampleHistory(dbEarphoneHistory, 400)))
 
             val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
             dataClient.putDataItem(putDataReq)
@@ -78,7 +85,8 @@ class BatteryRepositoryImpl(
             val index = (i * step).toInt().coerceAtMost(history.size - 1)
             result.add(history[index])
         }
-        if (result.isNotEmpty() && history.isNotEmpty() && result.last().timestamp != history.last().timestamp) {
+        if (result.isNotEmpty() && history.isNotEmpty()) {
+            result[0] = history.first()
             result[result.size - 1] = history.last()
         }
         return result

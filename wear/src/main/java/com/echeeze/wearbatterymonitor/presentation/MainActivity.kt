@@ -169,6 +169,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         val p = dataMap.getInt("battery_percent"); val c = dataMap.getBoolean("is_charging"); val t = dataMap.getLong("timestamp")
         val ep = if (dataMap.containsKey("earphone_percent")) dataMap.getInt("earphone_percent") else null
         val en = dataMap.getString("earphone_name")
+        if (dataMap.containsKey("range_hours")) {
+            graphRangeHours = dataMap.getInt("range_hours")
+        }
         connectionState = if (isOnline) ConnectionState.Active(p, c, t, ep, en) else ConnectionState.Offline(p, c, t, ep, en)
         
         // Sync history if available in the dataMap

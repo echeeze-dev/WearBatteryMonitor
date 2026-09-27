@@ -1,8 +1,8 @@
 @startuml
 ' PlantUML Class Diagram for BattSync (WearBatteryMonitor)
-' Shows current architecture, components, repository pattern, and relationships with Android SDK & Google Wearable Data Layer.
+' Shows MVVM architecture, feature modules, repository pattern, and relationships with Android SDK & Google Wearable Data Layer.
 
-title BattSync (WearBatteryMonitor) - System Architecture & Class Diagram
+title BattSync (WearBatteryMonitor) - MVVM & System Architecture Class Diagram
 
 package "Android SDK / Platform APIs" <<SDK>> {
     class ComponentActivity
@@ -20,7 +20,6 @@ package "Google Play Services / Wearable Data Layer" <<Library>> {
     interface DataClient {
         + putDataItem()
         + addListener()
-        + getDataItems()
     }
     interface MessageClient {
         + sendMessage()
@@ -41,6 +40,88 @@ package "androidx.room (Database Layer)" <<Library>> {
 ' Mobile Module (:mobile)
 ' ==========================================
 package "com.echeeze.wearbatterymonitor (Mobile Module)" {
+
+    package "mobile.ui" {
+        class "MainActivity" as MobileMainActivity <<Activity>> {
+            - viewModel: MainViewModel
+            - phoneMonitor: PhoneBatteryMonitor
+            - earphoneMonitor: EarphoneBatteryMonitor
+            - wearDataSyncer: WearDataSyncer
+            + onCreate()
+            + onStart()
+            + onStop()
+        }
+
+        class MainViewModel {
+            - repository: BatteryRepository
+            - _uiState: MutableStateFlow<MainUiState>
+            + uiState: StateFlow<MainUiState>
+            + loadHistoryFromDb()
+            + updatePhoneBattery(...)
+            + updateEarphoneBattery(...)
+            + updateWatchBattery(...)
+            + addHistoryEntry(...)
+        }
+
+        class MainUiState <<DataClass>> {
+            + isLoading: Boolean
+            + phonePercent: Int
+            + phoneIsCharging: Boolean
+            + phoneHistory: List<BatteryEntry>
+            + watchPercent: Int?
+            + watchIsCharging: Boolean
+            + watchHistory: List<BatteryEntry>
+            + earphonePercent: Int?
+            + earphoneName: String?
+            + earphoneHistory: List<BatteryEntry>
+            + isServiceRunning: Boolean
+            + graphRangeHours: Int
+            + updateIntervalSeconds: Int
+        }
+
+        package "ui.components" {
+            class BatterySection <<Composable>>
+            class EarphoneSection <<Composable>>
+            class HistoryGraph <<Composable>>
+            class HistoryDetailDialog <<Composable>>
+        }
+    }
+
+    package "mobile.monitor" {
+        class PhoneBatteryMonitor {
+            - context: Context
+            - batteryReceiver: BroadcastReceiver
+            + startMonitoring(): Pair<Int, Boolean>
+            + stopMonitoring()
+        }
+
+        class EarphoneBatteryMonitor {
+            - context: Context
+            - bluetoothHeadset: BluetoothHeadset?
+            + startMonitoring()
+            + stopMonitoring()
+            + updateFromProfile()
+        }
+
+        class NotificationHelper {
+            - context: Context
+            + createNotificationChannel()
+            + createNotification(...): Notification
+            + updateNotification(...)
+        }
+    }
+
+    package "mobile.sync" {
+        class WearDataSyncer {
+            - context: Context
+            - repository: BatteryRepository
+            + startSyncing()
+            + stopSyncing()
+            + syncStatusToWear(...)
+            + onDataChanged(...)
+            + onMessageReceived(...)
+        }
+    }
 
     package "mobile.data" {
         entity BatteryEntry <<Entity>> {
@@ -79,108 +160,17 @@ package "com.echeeze.wearbatterymonitor (Mobile Module)" {
             + trimHistory(type: String, limit: Int)
             + syncStatusToWear(...)
         }
-
-        class Constants {
-            + {static} MAX_HISTORY_SIZE: Int
-        }
-    }
-
-    class "MainActivity" as MobileMainActivity <<Activity>> {
-        - batteryPercent: Int
-        - isCharging: Boolean
-        - phoneHistory: List<BatteryEntry>
-        - watchHistory: List<BatteryEntry>
-        - earphoneHistory: List<BatteryEntry>
-        - repository: BatteryRepository
-        - batteryMonitorService: BatteryMonitorService?
-        - serviceConnection: ServiceConnection
-        - batteryReceiver: BroadcastReceiver
-        + onCreate()
-        + sendBatteryStatusToWear()
-        + loadHistoryFromDb()
     }
 
     class BatteryMonitorService <<Service>> {
-        - bluetoothHeadset: BluetoothHeadset?
-        - profileListener: BluetoothProfile.ServiceListener
-        - batteryReceiver: BroadcastReceiver
-        - database: AppDatabase
-        - batteryDao: BatteryDao
         - repository: BatteryRepository
-        + currentPhonePercent: Int
-        + currentPhoneCharging: Boolean
-        + currentEarphonePercent: Int?
-        + currentEarphoneName: String?
+        - notificationHelper: NotificationHelper
+        - phoneMonitor: PhoneBatteryMonitor
+        - earphoneMonitor: EarphoneBatteryMonitor
+        - wearDataSyncer: WearDataSyncer
         + onCreate()
+        + onDestroy()
         + syncAllData()
-        + updateEarphoneInfo()
-        + requestWatchBatteryUpdate()
-    }
-
-    class MobileWearableListenerService <<WearableListenerService>> {
-        + onMessageReceived(messageEvent: MessageEvent)
-        + onDataChanged(dataEvents: DataEventBuffer)
-        - sendBatteryStatus()
-    }
-}
-
-' ==========================================
-' Wear Module (:wear)
-' ==========================================
-package "com.echeeze.wearbatterymonitor (Wear Module)" {
-
-    package "wear.data" {
-        class "BatteryEntry" as WearBatteryEntry {
-            + deviceType: String
-            + percent: Int
-            + timestamp: Long
-            + isCharging: Boolean
-            + deviceName: String?
-        }
-    }
-
-    package "wear.presentation" {
-        enum ConnectionState {
-            Initializing
-            Disconnected
-            AppNotInstalled
-            NoData
-            Active
-            Offline
-        }
-
-        class "MainActivity" as WearMainActivity <<Activity>> {
-            - connectionState: ConnectionState
-            - watchBatteryPercent: Int
-            - watchIsCharging: Boolean
-            - phoneHistory: List<BatteryEntry>
-            - earphoneHistory: List<BatteryEntry>
-            - watchHistory: List<BatteryEntry>
-            - watchBatteryReceiver: BroadcastReceiver
-            + onCreate()
-            + onResume()
-            + updateWatchBattery()
-            + sendWatchBatteryToPhone()
-            + checkStatus()
-        }
-    }
-
-    package "wear.tile" {
-        class PhoneBatteryTileService <<TileService>> {
-            + onTileRequest(requestParams): ListenableFuture<Tile>
-            + onTileResourcesRequest(requestParams): ListenableFuture<Resources>
-        }
-
-        class TileDataUpdateService <<TileService>> {
-            + onTileRequest(requestParams): ListenableFuture<Tile>
-        }
-    }
-
-    package "wear.complication" {
-        class MainComplicationService <<Complication>> {
-            + getPreviewData(type): ComplicationData?
-            + onComplicationRequest(request): ComplicationData?
-        }
     }
 }
 
@@ -188,47 +178,30 @@ package "com.echeeze.wearbatterymonitor (Wear Module)" {
 ' Relationships & Inheritances
 ' ==========================================
 
-' Inheritance from Android SDK
 ComponentActivity <|-- MobileMainActivity
-ComponentActivity <|-- WearMainActivity
 Service <|-- BatteryMonitorService
-WearableListenerService <|-- MobileWearableListenerService
-TileService <|-- PhoneBatteryTileService
-TileService <|-- TileDataUpdateService
-SuspendingComplicationDataSourceService <|-- MainComplicationService
 RoomDatabase <|-- AppDatabase
 
-' Repository Pattern Realization
-BatteryRepository <|.. BatteryRepositoryImpl
-BatteryRepositoryImpl --> BatteryDao : uses
-BatteryRepositoryImpl ..> DataClient : syncs data via
+' MVVM Relationships
+MobileMainActivity --> MainViewModel : observes
+MainViewModel --> MainUiState : holds
+MainViewModel --> BatteryRepository : uses
 
-' Room DB Relationships
-AppDatabase --> BatteryDao : provides
-BatteryDao ..> BatteryEntry : uses
-MobileMainActivity --> BatteryRepository : uses
+' Service & Feature Modules Relationships
+BatteryMonitorService --> PhoneBatteryMonitor : uses
+BatteryMonitorService --> EarphoneBatteryMonitor : uses
+BatteryMonitorService --> NotificationHelper : uses
+BatteryMonitorService --> WearDataSyncer : uses
 BatteryMonitorService --> BatteryRepository : uses
 
-' Service Connection
-MobileMainActivity o-- BatteryMonitorService : binds via ServiceConnection
+MobileMainActivity --> PhoneBatteryMonitor : uses
+MobileMainActivity --> EarphoneBatteryMonitor : uses
+MobileMainActivity --> WearDataSyncer : uses
 
-' Android System API Interactions
-BatteryMonitorService ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
-BatteryMonitorService ..> BluetoothHeadset : connects via ServiceListener
-MobileMainActivity ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
-WearMainActivity ..> BatteryManager : monitors ACTION_BATTERY_CHANGED
+' Repository Relationships
+BatteryRepository <|.. BatteryRepositoryImpl
+BatteryRepositoryImpl --> BatteryDao : uses
+AppDatabase --> BatteryDao : provides
+BatteryDao ..> BatteryEntry : uses
 
-' Google Wearable Data Layer Interactions
-MobileMainActivity ..> DataClient : sends /battery_status
-MobileMainActivity ..> MessageClient : listens /request_battery_update
-BatteryMonitorService ..> DataClient : listens /watch_battery
-MobileWearableListenerService ..> DataClient : sends /battery_status
-MobileWearableListenerService ..> MessageClient : handles /request_battery_update
-
-WearMainActivity ..> DataClient : sends /watch_battery, receives /battery_status
-WearMainActivity ..> MessageClient : sends /request_battery_update
-WearMainActivity ..> CapabilityClient : checks "battery_monitor_phone_app"
-PhoneBatteryTileService ..> DataClient : reads /battery_status & /settings/graph_range
-MainComplicationService ..> DataClient : reads /battery_status
-
-@enduml
+@uml

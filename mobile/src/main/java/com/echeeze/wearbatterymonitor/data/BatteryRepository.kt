@@ -11,6 +11,7 @@ interface BatteryRepository {
         earphoneName: String?,
         phoneHistory: List<BatteryEntry>,
         watchHistory: List<BatteryEntry> = emptyList(),
-        earphoneHistory: List<BatteryEntry> = emptyList()
+        earphoneHistory: List<BatteryEntry> = emptyList(),
+        rangeHours: Int = 3
     )
 }

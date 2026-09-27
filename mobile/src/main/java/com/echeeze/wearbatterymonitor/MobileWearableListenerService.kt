@@ -4,6 +4,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
+import com.echeeze.wearbatterymonitor.data.AppDatabase
+import com.echeeze.wearbatterymonitor.data.BatteryEntry
+import com.echeeze.wearbatterymonitor.data.BatteryRepositoryImpl
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
@@ -11,6 +14,9 @@ import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MobileWearableListenerService : WearableListenerService() {
 
@@ -24,12 +30,32 @@ class MobileWearableListenerService : WearableListenerService() {
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         Log.i("BatteryMonitorListener", "onDataChanged received ${dataEvents.count} events")
+        val database = AppDatabase.getDatabase(this)
+        val repository = BatteryRepositoryImpl(this, database.batteryDao())
+        val scope = CoroutineScope(Dispatchers.IO)
+
         for (event in dataEvents) {
             Log.i("BatteryMonitorListener", "Event path: ${event.dataItem.uri.path}")
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == "/watch_battery") {
                 val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
                 val percent = dataMap.getInt("watch_percent")
-                Log.i("BatteryMonitorListener", "Backup listener received watch battery: $percent%")
+                val isCharging = dataMap.getBoolean("watch_is_charging")
+                val deviceName = if (dataMap.containsKey("device_name")) dataMap.getString("device_name") else null
+                val recordReason = if (dataMap.containsKey("record_reason")) dataMap.getString("record_reason") else "DATA_SYNC"
+
+                Log.i("BatteryMonitorListener", "Backup listener received watch battery: $percent% from $deviceName ($recordReason)")
+                scope.launch {
+                    repository.insertEntry(
+                        BatteryEntry(
+                            deviceType = "watch",
+                            percent = percent,
+                            timestamp = System.currentTimeMillis(),
+                            isCharging = isCharging,
+                            deviceName = deviceName,
+                            recordReason = recordReason
+                        )
+                    )
+                }
             }
         }
     }
