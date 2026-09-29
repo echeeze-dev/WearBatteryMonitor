@@ -60,7 +60,6 @@ import com.echeeze.wearbatterymonitor.ui.MainUiState
 import com.echeeze.wearbatterymonitor.ui.MainViewModel
 import com.echeeze.wearbatterymonitor.ui.components.BatterySection
 import com.echeeze.wearbatterymonitor.ui.components.EarphoneSection
-import com.echeeze.wearbatterymonitor.ui.components.HistoryDetailDialog
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
 import com.echeeze.wearbatterymonitor.util.CrashLogger
 import com.google.android.gms.wearable.Wearable
