@@ -40,16 +40,11 @@ class MainViewModel(
             val earphoneData = repository.getHistoryByType("earphone")
 
             withContext(Dispatchers.Main) {
-                val latestWatchName = watchData.lastOrNull { it.deviceName != null }?.deviceName
-                val latestEarphoneName = earphoneData.lastOrNull { it.deviceName != null }?.deviceName
-
                 _uiState.update { current ->
                     current.copy(
                         phoneHistory = phoneData,
                         watchHistory = watchData,
-                        earphoneHistory = earphoneData,
-                        watchName = current.watchName ?: latestWatchName,
-                        earphoneName = current.earphoneName ?: latestEarphoneName
+                        earphoneHistory = earphoneData
                     )
                 }
 

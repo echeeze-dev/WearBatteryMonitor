@@ -137,19 +137,24 @@ class EarphoneBatteryMonitor(
     fun updateFromProfile() {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
 
-        bluetoothHeadset?.connectedDevices?.firstOrNull()?.let { device ->
+        val activeDevice = bluetoothHeadset?.connectedDevices?.firstOrNull { device ->
             val deviceClass = device.bluetoothClass?.deviceClass ?: 0
-            if ((deviceClass and 0x0700) == 0x0700) return@let
+            (deviceClass and 0x0700) != 0x0700
+        }
 
+        if (activeDevice != null) {
             try {
-                val method = device.javaClass.getMethod("getBatteryLevel")
-                val level = method.invoke(device) as Int
+                val method = activeDevice.javaClass.getMethod("getBatteryLevel")
+                val level = method.invoke(activeDevice) as Int
                 val percent = if (level != -1) level else null
-                onEarphoneChanged(percent, device.name, "BT_CONNECTION")
+                onEarphoneChanged(percent, activeDevice.name, "BT_CONNECTION")
             } catch (e: Exception) {
                 Log.d("EarphoneBatteryMonitor", "Could not reflect getBatteryLevel: ${e.message}")
-                onEarphoneChanged(null, device.name, "BT_CONNECTION")
+                onEarphoneChanged(null, activeDevice.name, "BT_CONNECTION")
             }
+        } else {
+            // 接続中のデバイスが存在しない場合はリアルタイムに未接続状態を通知する
+            onEarphoneChanged(null, null, "BT_CONNECTION")
         }
     }
 
