@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,6 +62,7 @@ import com.echeeze.wearbatterymonitor.ui.components.BatterySection
 import com.echeeze.wearbatterymonitor.ui.components.EarphoneSection
 import com.echeeze.wearbatterymonitor.ui.components.HistoryDetailDialog
 import com.echeeze.wearbatterymonitor.ui.theme.WearBatteryMonitorTheme
+import com.echeeze.wearbatterymonitor.util.CrashLogger
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -97,6 +99,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLogger.init(this)
         val database = AppDatabase.getDatabase(this)
         val repository = BatteryRepositoryImpl(this, database.batteryDao())
         viewModel = MainViewModel(repository)
@@ -215,7 +218,7 @@ class MainActivity : ComponentActivity() {
             try {
                 unbindService(serviceConnection)
             } catch (e: IllegalArgumentException) {
-                // Ignore if not bound
+                Log.w("MainActivity", "Service unbind ignored", e)
             }
         }
         activityScope.cancel()
@@ -260,7 +263,7 @@ class MainActivity : ComponentActivity() {
             try {
                 unbindService(serviceConnection)
             } catch (e: IllegalArgumentException) {
-                // Ignore
+                Log.w("MainActivity", "Service unbind ignored", e)
             }
             stopService(Intent(this, BatteryMonitorService::class.java))
         }
@@ -376,8 +379,8 @@ fun BatteryMonitorScreen(
         }
     }
 
-    detailDialogData?.let { (title, history) ->
-        HistoryDetailDialog(title = title, history = history, onDismiss = { detailDialogData = null })
+    detailDialogData?.let { data ->
+        com.echeeze.wearbatterymonitor.ui.components.HistoryDetailDialog(title = data.first, history = data.second, onDismiss = { detailDialogData = null })
     }
 }
 

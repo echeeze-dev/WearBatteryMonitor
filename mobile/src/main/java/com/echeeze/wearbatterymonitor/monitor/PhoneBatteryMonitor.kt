@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.util.Log
 
 /**
  * スマートフォン本体のバッテリー状態（残量・充電状態等）を監視・取得するクラスです。
@@ -52,7 +53,7 @@ class PhoneBatteryMonitor(
         try {
             context.unregisterReceiver(batteryReceiver)
         } catch (e: IllegalArgumentException) {
-            // 受信機が登録されていない場合の例外を安全に吸収
+            Log.d("PhoneBatteryMonitor", "Receiver unregister ignored", e)
         }
     }
 

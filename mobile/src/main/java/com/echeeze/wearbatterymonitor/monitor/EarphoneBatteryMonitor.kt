@@ -91,7 +91,7 @@ class EarphoneBatteryMonitor(
         try {
             context.unregisterReceiver(bluetoothReceiver)
         } catch (e: IllegalArgumentException) {
-            // 受信機が登録されていない場合の例外を回避
+            Log.d("EarphoneBatteryMonitor", "Receiver unregister ignored", e)
         }
 
         bluetoothHeadset?.let {
