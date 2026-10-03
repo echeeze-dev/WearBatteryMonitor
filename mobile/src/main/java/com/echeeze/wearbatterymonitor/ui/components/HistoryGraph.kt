@@ -159,6 +159,37 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                     lastBoundaryDay = currentDay
                 }
 
+                // デバイス名テキスト描画（接続開始時 1 回のみ ＋ テキスト＆グラフ高さによる自動段数切り替え）
+                var lastDrawnDeviceName: String? = null
+                var nameLevelIndex = 0
+                val labelColor = Color(0xFF6200EE)
+
+                history.forEach { entry ->
+                    val name = entry.deviceName
+                    if (!name.isNullOrBlank()) {
+                        if (name != lastDrawnDeviceName) {
+                            val x = ((entry.timestamp - minDataTs).toFloat() / totalTimelineDuration) * width
+                            val textResult = textMeasurer.measure(
+                                text = name,
+                                style = TextStyle(fontSize = 10.sp, color = labelColor, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                            )
+                            val textHeight = textResult.size.height.toFloat().coerceAtLeast(10.dp.toPx())
+                            val maxLevels = ((height - textHeight) / textHeight).toInt().coerceIn(2, 5)
+                            val currentLevel = nameLevelIndex % maxLevels
+                            val levelY = 2.dp.toPx() + (currentLevel * (textHeight * 0.95f))
+
+                            drawText(
+                                textLayoutResult = textResult,
+                                topLeft = Offset(x + 2.dp.toPx(), levelY)
+                            )
+                            lastDrawnDeviceName = name
+                            nameLevelIndex++
+                        }
+                    } else {
+                        lastDrawnDeviceName = null
+                    }
+                }
+
                 val leftmostX = 0f
                 drawLine(color = boundaryColor, start = Offset(leftmostX, 0f), end = Offset(leftmostX, height), strokeWidth = 1.5.dp.toPx())
                 val rightmostX = width
