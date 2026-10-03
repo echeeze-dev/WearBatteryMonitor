@@ -67,10 +67,10 @@ class BatteryMonitorService : Service() {
         repository = BatteryRepositoryImpl(this, database.batteryDao())
         notificationHelper = NotificationHelper(this)
 
-        phoneMonitor = PhoneBatteryMonitor(this) { percent, isCharging ->
+        phoneMonitor = PhoneBatteryMonitor(this) { percent, isCharging, reason ->
             currentPhonePercent = percent
             currentPhoneCharging = isCharging
-            addHistory(phoneHistory, "phone", percent, isCharging, Build.MODEL, "BATTERY_CHANGED")
+            addHistory(phoneHistory, "phone", percent, isCharging, Build.MODEL, reason)
             syncAllData()
             notificationHelper.updateNotification(percent, isCharging)
         }

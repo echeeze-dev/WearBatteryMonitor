@@ -113,10 +113,10 @@ class MainActivity : ComponentActivity() {
         viewModel.setGraphRangeHours(graphRangeHours)
         viewModel.setUpdateIntervalSeconds(updateIntervalSeconds)
 
-        phoneMonitor = PhoneBatteryMonitor(this) { percent, isCharging ->
+        phoneMonitor = PhoneBatteryMonitor(this) { percent, isCharging, reason ->
             viewModel.updatePhoneBattery(percent, isCharging)
             if (!viewModel.uiState.value.isServiceRunning) {
-                viewModel.addHistoryEntry(BatteryEntry("phone", percent, System.currentTimeMillis(), isCharging, Build.MODEL, "BATTERY_CHANGED"))
+                viewModel.addHistoryEntry(BatteryEntry("phone", percent, System.currentTimeMillis(), isCharging, Build.MODEL, reason))
             }
         }
 
@@ -197,10 +197,19 @@ class MainActivity : ComponentActivity() {
         earphoneMonitor.startMonitoring()
         wearDataSyncer.startSyncing()
 
+        checkWatchNodeConnection()
+    }
+
+    private fun checkWatchNodeConnection() {
         Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
-            nodes.firstOrNull()?.displayName?.let { name ->
-                viewModel.updateWatchName(name)
+            val isConnected = nodes.isNotEmpty()
+            val name = nodes.firstOrNull()?.displayName
+            viewModel.updateWatchConnected(isConnected, name)
+            if (batteryMonitorService != null && name != null) {
+                batteryMonitorService?.currentWatchName = name
             }
+        }.addOnFailureListener {
+            viewModel.updateWatchConnected(false)
         }
     }
 
@@ -227,9 +236,7 @@ class MainActivity : ComponentActivity() {
         batteryMonitorService?.let { service ->
             viewModel.updatePhoneBattery(service.currentPhonePercent, service.currentPhoneCharging)
             viewModel.updateEarphoneBattery(service.currentEarphonePercent, service.currentEarphoneName)
-            if (service.currentWatchName != null) {
-                viewModel.updateWatchName(service.currentWatchName)
-            }
+            checkWatchNodeConnection()
             if (service.phoneHistory.isNotEmpty()) {
                 viewModel.loadHistoryFromDb()
             }
@@ -340,10 +347,10 @@ fun BatteryMonitorScreen(
         BatterySection(
             icon = Icons.Default.Watch,
             title = uiState.watchName ?: "Smartwatch",
-            percent = uiState.watchPercent ?: 0,
+            percent = uiState.watchPercent,
             isCharging = uiState.watchIsCharging,
             history = uiState.watchHistory,
-            isDisconnected = uiState.watchPercent == null,
+            isDisconnected = !uiState.isWatchConnected,
             rangeHours = uiState.graphRangeHours,
             onGraphClick = { detailDialogData = (uiState.watchName ?: "Smartwatch") to uiState.watchHistory }
         )

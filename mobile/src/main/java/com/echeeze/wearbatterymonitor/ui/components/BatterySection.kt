@@ -43,7 +43,7 @@ import java.util.Locale
 fun BatterySection(
     icon: ImageVector,
     title: String,
-    percent: Int,
+    percent: Int?,
     isCharging: Boolean,
     history: List<BatteryEntry>,
     isDisconnected: Boolean = false,
@@ -57,6 +57,12 @@ fun BatterySection(
         title
     }
 
+    val displayPercent = when {
+        isDisconnected -> "Disconnected"
+        percent != null && percent != -1 -> "$percent%"
+        else -> "---"
+    }
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
@@ -64,7 +70,7 @@ fun BatterySection(
             Text(text = displayTitle, style = MaterialTheme.typography.headlineSmall)
         }
         Text(
-            text = if (isDisconnected) "Disconnected" else "$percent%",
+            text = displayPercent,
             style = MaterialTheme.typography.displayLarge,
             color = if (isDisconnected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
         )

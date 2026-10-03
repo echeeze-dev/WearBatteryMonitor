@@ -80,6 +80,7 @@ WearBatteryMonitor/
 
 - **[システム仕様書 & アーキテクチャ解説](docs/design/system_overview.md)**: アプリの全体構成、機能と Android SDK / ライブラリクラスとの対応関係表
 - **[PlantUML クラス図](docs/design/class_diagram.puml)**: モジュール構造とリポジトリパターンの定型クラス図
+- **[設計決定記録 (ADR)](docs/decisions/)**: アーキテクチャの選定・比較および技術方針決定理由（例: バックグラウンド監視方式の選定理由）の記録一覧
 - **[開発・運用ルールガイドライン](docs/development_rules.md)**: AI エージェント (Gemini 等) を利用する際の本プロジェクトの開発フロー、事前 Plan 承認、KDoc コメント、ルール変更履歴などの共同開発取り決め一覧
 - **[プライバシーポリシー](docs/PRIVACY_POLICY.md)**: Google Play Console 登録用プライバシーポリシー文書
 

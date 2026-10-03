@@ -34,5 +34,6 @@ data class MainUiState(
     val isServiceRunning: Boolean = false,
     val graphRangeHours: Int = 3,
     val updateIntervalSeconds: Int = 60,
-    val watchName: String? = null
+    val watchName: String? = null,
+    val isWatchConnected: Boolean = false
 )

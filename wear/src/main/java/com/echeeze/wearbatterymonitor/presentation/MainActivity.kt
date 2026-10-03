@@ -68,7 +68,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
     private val watchHistory = mutableStateListOf<BatteryEntry>()
 
     private val watchBatteryReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { updateWatchBattery() }
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SHUTDOWN) {
+                sendWatchBatteryToPhone("WATCH_SHUTDOWN")
+            } else {
+                updateWatchBattery()
+            }
+        }
     }
 
     private lateinit var repository: WearBatteryRepository
@@ -87,9 +93,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener, Capa
         super.onResume()
         Wearable.getDataClient(this).addListener(this)
         Wearable.getCapabilityClient(this).addListener(this, "battery_monitor_phone_app")
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_SHUTDOWN)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(watchBatteryReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(watchBatteryReceiver, filter, RECEIVER_EXPORTED)
         } else {
             registerReceiver(watchBatteryReceiver, filter)
         }

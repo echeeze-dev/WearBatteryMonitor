@@ -132,6 +132,9 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                         "BT_BATTERY_CHANGED", "BT_UPDATE" -> "🎧 BT Battery"
                                         "BT_CONNECTION" -> "🔗 Bluetooth"
                                         "DATA_SYNC" -> "🔄 Sync"
+                                        "SYSTEM_SHUTDOWN" -> "🛑 Shutdown"
+                                        "BATTERY_LOW" -> "⚠️ Low Battery"
+                                        "WATCH_SHUTDOWN" -> "⌚ Watch Shutdown"
                                         else -> if (entry.percent == -1) "Disconnected" else "Record"
                                     }
 

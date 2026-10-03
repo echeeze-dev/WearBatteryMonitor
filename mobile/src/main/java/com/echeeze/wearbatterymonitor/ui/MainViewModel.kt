@@ -122,6 +122,21 @@ class MainViewModel(
     }
 
     /**
+     * ウォッチのリアルタイム接続状態を更新します。
+     *
+     * @param isConnected リアルタイム接続中フラグ
+     * @param watchName ウォッチのデバイス名
+     */
+    fun updateWatchConnected(isConnected: Boolean, watchName: String? = null) {
+        _uiState.update { current ->
+            current.copy(
+                isWatchConnected = isConnected,
+                watchName = watchName ?: current.watchName
+            )
+        }
+    }
+
+    /**
      * 履歴リストに新しいエントリーを追加します。
      *
      * @param entry バッテリーエントリー

@@ -19,15 +19,18 @@ import android.util.Log
  */
 class PhoneBatteryMonitor(
     private val context: Context,
-    private val onBatteryChanged: (percent: Int, isCharging: Boolean) -> Unit
+    private val onBatteryChanged: (percent: Int, isCharging: Boolean, reason: String) -> Unit
 ) {
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_BATTERY_CHANGED) {
-                val (percent, isCharging) = parseBatteryIntent(intent)
-                onBatteryChanged(percent, isCharging)
+            val reason = when (intent.action) {
+                Intent.ACTION_SHUTDOWN -> "SYSTEM_SHUTDOWN"
+                Intent.ACTION_BATTERY_LOW -> "BATTERY_LOW"
+                else -> "BATTERY_CHANGED"
             }
+            val (percent, isCharging) = parseBatteryIntent(intent)
+            onBatteryChanged(percent, isCharging, reason)
         }
     }
 
@@ -37,9 +40,13 @@ class PhoneBatteryMonitor(
      * @return 登録直後の初期バッテリー状態（残量 % と充電フラグの Pair）
      */
     fun startMonitoring(): Pair<Int, Boolean> {
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_SHUTDOWN)
+            addAction(Intent.ACTION_BATTERY_LOW)
+        }
         val initialIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(batteryReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             context.registerReceiver(batteryReceiver, filter)
         }
