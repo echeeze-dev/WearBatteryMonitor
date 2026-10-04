@@ -1,5 +1,6 @@
 package com.echeeze.wearbatterymonitor.ui.components
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,7 +34,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -84,6 +87,7 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (showCrashLogView && crashLogText != null) {
+                    val clipboardManager = LocalClipboardManager.current
                     Column(modifier = Modifier.weight(1f)) {
                         val scrollState = rememberScrollState()
                         Text(
@@ -94,16 +98,32 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                 .fillMaxWidth()
                                 .verticalScroll(scrollState)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                CrashLogger.clearCrashLog(context)
-                                crashLogText = null
-                                showCrashLogView = false
-                            },
-                            modifier = Modifier.align(Alignment.End)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Clear Crash Log")
+                            OutlinedButton(
+                                onClick = {
+                                    crashLogText?.let { text ->
+                                        clipboardManager.setText(AnnotatedString(text))
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("📋 Copy Log")
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    com.echeeze.wearbatterymonitor.util.CrashLogger.clearCrashLog(context)
+                                    crashLogText = null
+                                    showCrashLogView = false
+                                }
+                            ) {
+                                Text("Clear Crash Log")
+                            }
                         }
                     }
                 } else {
@@ -128,13 +148,12 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                         "BATTERY_CHANGED" -> "⚡ Battery"
                                         "PERIODIC_INTERVAL" -> "⏱ Periodic" + (entry.intervalSeconds?.let { " (${formatInterval(it)})" } ?: "")
                                         "INITIAL_FETCH" -> "🚀 Initial"
-                                        "WEAR_REQUEST" -> "⌚ Wear Req"
+                                        "WEAR_REQUEST", "WATCH_SHUTDOWN", "WATCH_DISCONNECT", "WATCH_NO_RESPONSE" -> "⌚ Watch"
                                         "BT_BATTERY_CHANGED", "BT_UPDATE" -> "🎧 BT Battery"
-                                        "BT_CONNECTION" -> "🔗 Bluetooth"
+                                        "BT_CONNECTION", "BT_DISCONNECT" -> "🔗 Bluetooth"
                                         "DATA_SYNC" -> "🔄 Sync"
                                         "SYSTEM_SHUTDOWN" -> "🛑 Shutdown"
                                         "BATTERY_LOW" -> "⚠️ Low Battery"
-                                        "WATCH_SHUTDOWN" -> "⌚ Watch Shutdown"
                                         else -> if (entry.percent == -1) "Disconnected" else "Record"
                                     }
 
@@ -152,7 +171,11 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                         details.add("Charging")
                                     }
                                     if (entry.percent == -1) {
-                                        details.add(if (entry.deviceName != null) "Connected" else "Disconnected")
+                                        when (entry.recordReason) {
+                                            "BT_DISCONNECT", "WATCH_DISCONNECT" -> details.add("Disconnected")
+                                            "WATCH_NO_RESPONSE" -> details.add("No Response")
+                                            else -> details.add(if (entry.deviceName != null) "Connected" else "Disconnected")
+                                        }
                                     }
 
                                     if (details.isNotEmpty()) {

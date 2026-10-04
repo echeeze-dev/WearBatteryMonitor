@@ -65,8 +65,13 @@ import com.echeeze.wearbatterymonitor.util.CrashLogger
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * モバイルアプリのエントリーポイントとなるメイン Activity です。
@@ -181,7 +186,11 @@ class MainActivity : ComponentActivity() {
                                 uiState = uiState,
                                 onServiceToggle = { toggleService(it) },
                                 onGraphRangeChange = { updateGraphRange(it) },
-                                onIntervalChange = { updateInterval(it) }
+                                onIntervalChange = { updateInterval(it) },
+                                onRefresh = {
+                                    viewModel.refreshData()
+                                    checkWatchNodeConnection()
+                                }
                             )
                         }
                     }
@@ -189,6 +198,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private var periodicRefreshJob: kotlinx.coroutines.Job? = null
 
     override fun onStart() {
         super.onStart()
@@ -198,6 +209,7 @@ class MainActivity : ComponentActivity() {
         wearDataSyncer.startSyncing()
 
         checkWatchNodeConnection()
+        startPeriodicRefresh()
     }
 
     private fun checkWatchNodeConnection() {
@@ -213,8 +225,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startPeriodicRefresh() {
+        periodicRefreshJob?.cancel()
+        periodicRefreshJob = activityScope.launch {
+            while (isActive) {
+                val interval = viewModel.uiState.value.updateIntervalSeconds.coerceAtLeast(10)
+                delay(interval.seconds)
+                viewModel.refreshData()
+                checkWatchNodeConnection()
+            }
+        }
+    }
+
     override fun onStop() {
         super.onStop()
+        periodicRefreshJob?.cancel()
         phoneMonitor.stopMonitoring()
         earphoneMonitor.stopMonitoring()
         wearDataSyncer.stopSyncing()
@@ -314,24 +339,35 @@ fun BatteryMonitorScreen(
     uiState: MainUiState,
     onServiceToggle: (Boolean) -> Unit,
     onGraphRangeChange: (Int) -> Unit,
-    onIntervalChange: (Int) -> Unit
+    onIntervalChange: (Int) -> Unit,
+    onRefresh: () -> Unit
 ) {
     val context = LocalContext.current
     var detailDialogData by remember { mutableStateOf<Pair<String, List<BatteryEntry>>?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     val permsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
         if (perms.values.all { it }) onServiceToggle(true) else Toast.makeText(context, "Permissions required", Toast.LENGTH_SHORT).show()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            onRefresh()
+            isRefreshing = false
+        },
+        modifier = Modifier.fillMaxSize()
     ) {
-        GraphRangeSelector(uiState.graphRangeHours, onGraphRangeChange)
-        Spacer(modifier = Modifier.height(24.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            GraphRangeSelector(uiState.graphRangeHours, onGraphRangeChange)
+            Spacer(modifier = Modifier.height(24.dp))
 
         BatterySection(
             icon = Icons.Default.Smartphone,
@@ -384,6 +420,7 @@ fun BatteryMonitorScreen(
             }
         }
     }
+}
 
     detailDialogData?.let { data ->
         com.echeeze.wearbatterymonitor.ui.components.HistoryDetailDialog(title = data.first, history = data.second, onDismiss = { detailDialogData = null })

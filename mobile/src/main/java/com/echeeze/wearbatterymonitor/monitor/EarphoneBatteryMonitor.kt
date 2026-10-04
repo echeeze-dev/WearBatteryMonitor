@@ -166,9 +166,10 @@ class EarphoneBatteryMonitor(
             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
         }
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-            if (device != null) {
-                onEarphoneChanged(null, null, "BT_CONNECTION")
-            }
+            val deviceName = device?.name
+            onEarphoneChanged(null, deviceName, "BT_DISCONNECT")
+        } else {
+            onEarphoneChanged(null, null, "BT_DISCONNECT")
         }
     }
 }

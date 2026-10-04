@@ -136,8 +136,14 @@ class BatteryMonitorService : Service() {
                     addHistory(phoneHistory, "phone", currentPhonePercent, currentPhoneCharging, Build.MODEL, "PERIODIC_INTERVAL", intervalSeconds)
 
                     val lastWatch = watchHistory.lastOrNull()
-                    if (lastWatch == null || System.currentTimeMillis() - lastWatch.timestamp > intervalSeconds * 2000L) {
-                        addHistory(watchHistory, "watch", -1, false, null, "PERIODIC_INTERVAL", intervalSeconds)
+                    val isWatchStale = lastWatch == null || System.currentTimeMillis() - lastWatch.timestamp > intervalSeconds * 2000L
+                    if (isWatchStale) {
+                        Wearable.getNodeClient(this@BatteryMonitorService).connectedNodes.addOnSuccessListener { nodes ->
+                            val reason = if (nodes.isEmpty()) "WATCH_DISCONNECT" else "WATCH_NO_RESPONSE"
+                            addHistory(watchHistory, "watch", -1, false, currentWatchName, reason, intervalSeconds)
+                        }.addOnFailureListener {
+                            addHistory(watchHistory, "watch", -1, false, currentWatchName, "WATCH_DISCONNECT", intervalSeconds)
+                        }
                     }
 
                     if (currentEarphoneName != null) {

@@ -56,6 +56,13 @@ class MainViewModel(
     }
 
     /**
+     * データベースから最新の履歴データを再読み込みして画面状態を最新化します。
+     */
+    fun refreshData() {
+        loadHistoryFromDb()
+    }
+
+    /**
      * サービス起動状態を設定します。
      *
      * @param running 起動中フラグ
