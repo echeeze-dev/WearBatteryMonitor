@@ -186,7 +186,10 @@ fun HistoryGraph(history: List<BatteryEntry>, rangeHours: Int, scrollState: Scro
                             nameLevelIndex++
                         }
                     } else {
-                        lastDrawnDeviceName = null
+                        // 明示的な切断ログ時のみクリアし、単なる応答なし (No Response) ログ継続時は前回描画デバイス名を維持
+                        if (entry.recordReason == "BT_DISCONNECT" || entry.recordReason == "WATCH_DISCONNECT") {
+                            lastDrawnDeviceName = null
+                        }
                     }
                 }
 

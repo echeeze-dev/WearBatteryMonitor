@@ -53,6 +53,8 @@ class BatteryMonitorService : Service() {
     var currentEarphonePercent: Int? = null
     var currentEarphoneName: String? = null
     var currentWatchName: String? = null
+    var currentWatchPercent: Int? = null
+    var currentWatchIsCharging: Boolean = false
 
     val phoneHistory = mutableListOf<BatteryEntry>()
     val watchHistory = mutableListOf<BatteryEntry>()
@@ -89,6 +91,8 @@ class BatteryMonitorService : Service() {
             repository = repository,
             scope = serviceScope,
             onWatchBatteryReceived = { percent, isCharging, deviceName, recordReason ->
+                currentWatchPercent = percent
+                currentWatchIsCharging = isCharging
                 if (deviceName != null) {
                     currentWatchName = deviceName
                 }

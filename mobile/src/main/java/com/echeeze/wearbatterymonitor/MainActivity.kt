@@ -261,6 +261,7 @@ class MainActivity : ComponentActivity() {
         batteryMonitorService?.let { service ->
             viewModel.updatePhoneBattery(service.currentPhonePercent, service.currentPhoneCharging)
             viewModel.updateEarphoneBattery(service.currentEarphonePercent, service.currentEarphoneName)
+            viewModel.updateWatchBattery(service.currentWatchPercent, service.currentWatchIsCharging)
             checkWatchNodeConnection()
             if (service.phoneHistory.isNotEmpty()) {
                 viewModel.loadHistoryFromDb()
