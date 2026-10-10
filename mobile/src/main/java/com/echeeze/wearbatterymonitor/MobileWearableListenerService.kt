@@ -30,6 +30,12 @@ class MobileWearableListenerService : WearableListenerService() {
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         Log.i("BatteryMonitorListener", "onDataChanged received ${dataEvents.count} events")
+        // 常駐監視サービスが起動中で WearDataSyncer 側が直接受領・保存を行っている場合は二重インサートを防止する
+        if (BatteryMonitorService.isRunning) {
+            Log.d("BatteryMonitorListener", "Skipping duplicate insert in listener service because BatteryMonitorService is running")
+            return
+        }
+
         val database = AppDatabase.getDatabase(this)
         val repository = BatteryRepositoryImpl(this, database.batteryDao())
         val scope = CoroutineScope(Dispatchers.IO)

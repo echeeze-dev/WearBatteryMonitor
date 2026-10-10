@@ -63,8 +63,14 @@ class BatteryMonitorService : Service() {
     private var watchUpdateTimer: Timer? = null
     private var updateIntervalSeconds = 60
 
+    companion object {
+        @Volatile
+        var isRunning: Boolean = false
+    }
+
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         val database = AppDatabase.getDatabase(this)
         repository = BatteryRepositoryImpl(this, database.batteryDao())
         notificationHelper = NotificationHelper(this)
@@ -223,6 +229,7 @@ class BatteryMonitorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         watchUpdateTimer?.cancel()
         phoneMonitor.stopMonitoring()
         earphoneMonitor.stopMonitoring()

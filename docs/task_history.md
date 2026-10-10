@@ -32,7 +32,7 @@
 | **#22** | Bluetooth イヤホンのバッテリー切れ推測検知ロジック | Feature | 2026/10/03 09:40 | 2026/10/03 09:48 | `[NOT_NEEDED]` | `[NO]` | `[NO]` | [Plan](plans/20261003_add_shutdown_reason_logging.md) | - | - |
 | **#23** | スマートウォッチ最新バッテリー情報のリアルタイム表示修復 | Fix | 2026/10/10 10:55 | 2026/10/10 11:15 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_fix_watch_battery_realtime_display.md) | [Walkthrough](walkthroughs/20261010_fix_watch_battery_realtime_display.md) | - |
 | **#24** | 応答なし (No Response) 発生時におけるグラフ内デバイス名重複描画抑止 | Fix | 2026/10/10 10:55 | 2026/10/10 11:20 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_prevent_duplicate_device_name_on_no_response.md) | [Walkthrough](walkthroughs/20261010_prevent_duplicate_device_name_on_no_response.md) | - |
-| **#25** | データ同期 (DATA_SYNC) 発生時における履歴 2 重重複保存の防止 | Fix | 2026/10/10 10:55 | - | `[PENDING]` | `[YES]` | `[NO]` | [Plan](plans/20261010_prevent_duplicate_data_sync_history.md) | - | - |
+| **#25** | データ同期 (DATA_SYNC) 発生時における履歴 2 重重複保存の防止 | Fix | 2026/10/10 10:55 | 2026/10/10 11:35 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_prevent_duplicate_data_sync_history.md) | [Walkthrough](walkthroughs/20261010_prevent_duplicate_data_sync_history.md) | - |
 | **#26** | Bluetooth デバイス一覧領域からのスマートウォッチ情報除外 | Fix | 2026/10/10 10:55 | - | `[PENDING]` | `[YES]` | `[NO]` | [Plan](plans/20261010_exclude_watch_from_bluetooth_devices.md) | - | - |
 
 ---
