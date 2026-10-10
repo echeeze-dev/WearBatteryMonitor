@@ -138,9 +138,10 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = sdf.format(Date(entry.timestamp)).substringAfter(" "),
+                                    text = sdf.format(Date(entry.timestamp)),
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.width(70.dp)
+                                    modifier = Modifier.width(120.dp),
+                                    maxLines = 1
                                 )
 
                                 Column(modifier = Modifier.weight(1f)) {
