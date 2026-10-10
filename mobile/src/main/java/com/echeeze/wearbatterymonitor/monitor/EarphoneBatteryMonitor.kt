@@ -102,6 +102,23 @@ class EarphoneBatteryMonitor(
     }
 
     /**
+     * 指定された Bluetooth デバイスがスマートウォッチ (Wear OS 端末) であるかを判定します。
+     *
+     * @param device Bluetooth デバイス
+     * @return スマートウォッチと判定された場合は true
+     */
+    private fun isWatchDevice(device: BluetoothDevice): Boolean {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            return false
+        }
+        val deviceClass = device.bluetoothClass?.deviceClass ?: 0
+        val majorClass = device.bluetoothClass?.majorDeviceClass ?: 0
+
+        // Bluetooth Device / Major Class による判定 (Wearable: 0x0700, Wrist Watch: 0x0704)
+        return ((deviceClass and 0x0700) == 0x0700) || (majorClass == 0x0700) || (deviceClass == 0x0704)
+    }
+
+    /**
      * Bluetooth インテントからデバイス名とバッテリーレベルを抽出して状態を更新します。
      *
      * @param intent Bluetooth ブロードキャストインテント
@@ -118,9 +135,8 @@ class EarphoneBatteryMonitor(
 
         if (device != null) {
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-                val deviceClass = device.bluetoothClass?.deviceClass ?: 0
-                // Wearable (0x0700) / Wrist Watch (0x0704) はイヤホンから除外
-                if ((deviceClass and 0x0700) == 0x0700) return
+                // スマートウォッチ端末はイヤホン一覧から確実に除外
+                if (isWatchDevice(device)) return
 
                 val percent = if (batteryLevel != -1) batteryLevel else null
                 val name = device.name
@@ -138,8 +154,7 @@ class EarphoneBatteryMonitor(
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
 
         val activeDevice = bluetoothHeadset?.connectedDevices?.firstOrNull { device ->
-            val deviceClass = device.bluetoothClass?.deviceClass ?: 0
-            (deviceClass and 0x0700) != 0x0700
+            !isWatchDevice(device)
         }
 
         if (activeDevice != null) {
