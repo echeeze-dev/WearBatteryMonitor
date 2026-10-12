@@ -95,6 +95,24 @@ private fun tile(
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
     } else "--:--"
 
+    val launchAction = androidx.wear.protolayout.ActionBuilders.LaunchAction.Builder()
+        .setAndroidActivity(
+            androidx.wear.protolayout.ActionBuilders.AndroidActivity.Builder()
+                .setPackageName(context.packageName)
+                .setClassName("com.echeeze.wearbatterymonitor.presentation.MainActivity")
+                .build()
+        )
+        .build()
+
+    val clickableModifier = ModifiersBuilders.Modifiers.Builder()
+        .setClickable(
+            ModifiersBuilders.Clickable.Builder()
+                .setId("launch_main_activity")
+                .setOnClick(launchAction)
+                .build()
+        )
+        .build()
+
     return TileBuilders.Tile.Builder()
         .setResourcesVersion(RESOURCES_VERSION)
         .setTileTimeline(
@@ -103,6 +121,7 @@ private fun tile(
                     primaryLayout(
                         mainSlot = {
                             Column.Builder()
+                                .setModifiers(clickableModifier)
                                 .addContent(
                                     text(
                                         "Phone".layoutString,

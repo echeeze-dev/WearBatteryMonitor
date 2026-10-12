@@ -48,8 +48,18 @@ class MainComplicationService : SuspendingComplicationDataSourceService() {
         return createComplicationData(text, contentDescription, isCharging)
     }
 
-    private fun createComplicationData(text: String, contentDescription: String, isCharging: Boolean) =
-        ShortTextComplicationData.Builder(
+    private fun createComplicationData(text: String, contentDescription: String, isCharging: Boolean): ShortTextComplicationData {
+        val intent = android.content.Intent(this, com.echeeze.wearbatterymonitor.presentation.MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return ShortTextComplicationData.Builder(
             text = PlainComplicationText.Builder(text).build(),
             contentDescription = PlainComplicationText.Builder(contentDescription).build()
         ).setMonochromaticImage(
@@ -60,5 +70,6 @@ class MainComplicationService : SuspendingComplicationDataSourceService() {
                     else com.echeeze.wearbatterymonitor.R.drawable.ic_phone_battery
                 )
             ).build()
-        ).build()
+        ).setTapAction(pendingIntent).build()
+    }
 }
