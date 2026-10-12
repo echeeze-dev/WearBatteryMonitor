@@ -35,6 +35,7 @@
 | **#25** | データ同期 (DATA_SYNC) 発生時における履歴 2 重重複保存の防止 | Fix | 2026/10/10 10:55 | 2026/10/10 11:35 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_prevent_duplicate_data_sync_history.md) | [Walkthrough](walkthroughs/20261010_prevent_duplicate_data_sync_history.md) | - |
 | **#26** | Bluetooth デバイス一覧領域からのスマートウォッチ情報除外 | Fix | 2026/10/10 10:55 | 2026/10/10 11:45 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_exclude_watch_from_bluetooth_devices.md) | [Walkthrough](walkthroughs/20261010_exclude_watch_from_bluetooth_devices.md) | - |
 | **#27** | 履歴リストの時刻表示に年月日を追加 | Fix | 2026/10/10 17:03 | 2026/10/10 17:15 | `[COMPLETED]` | `[YES]` | `[NO]` | [Plan](plans/20261010_show_date_in_history_list.md) | [Walkthrough](walkthroughs/20261010_show_date_in_history_list.md) | - |
+| **#28** | タイル/コンプリケーションタップ時のアプリ自動起動対応 | Feature | 2026/10/12 18:37 | - | `[IN_PROGRESS]` | `[NO]` | `[YES]` | [Plan](plans/20261012_launch_app_from_tile_and_complication.md) | - | - |
 
 ---
 
