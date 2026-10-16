@@ -58,7 +58,7 @@ import java.util.Locale
 @Composable
 fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val sdf = remember { SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()) }
+    val sdf = remember { SimpleDateFormat("yyyy/MM/dd\nHH:mm:ss", Locale.getDefault()) }
     var crashLogText by remember { mutableStateOf(CrashLogger.getCrashLog(context)) }
     var showCrashLogView by remember { mutableStateOf(false) }
 
@@ -140,8 +140,8 @@ fun HistoryDetailDialog(title: String, history: List<BatteryEntry>, onDismiss: (
                                 Text(
                                     text = sdf.format(Date(entry.timestamp)),
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.width(120.dp),
-                                    maxLines = 1
+                                    modifier = Modifier.width(80.dp),
+                                    maxLines = 2
                                 )
 
                                 Column(modifier = Modifier.weight(1f)) {
