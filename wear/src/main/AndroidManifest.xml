@@ -28,10 +28,41 @@
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />
         </service>
+
+        <service
+            android:name="com.echeeze.wearbatterymonitor.complication.EarphoneComplicationService"
+            android:exported="true"
+            android:label="Bluetooth Battery"
+            android:icon="@drawable/ic_phone_battery"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <service
             android:name="com.echeeze.wearbatterymonitor.tile.PhoneBatteryTileService"
             android:exported="true"
             android:label="@string/tile_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@mipmap/ic_launcher" />
+        </service>
+
+        <service
+            android:name="com.echeeze.wearbatterymonitor.tile.EarphoneBatteryTileService"
+            android:exported="true"
+            android:label="Bluetooth Battery Tile"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />

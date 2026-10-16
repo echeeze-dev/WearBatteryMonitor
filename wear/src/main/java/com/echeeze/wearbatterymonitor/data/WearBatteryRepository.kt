@@ -10,6 +10,14 @@ data class PhoneBatteryStatus(
     val rangeHours: Int = 3
 )
 
+data class EarphoneBatteryStatus(
+    val percent: Int?,
+    val name: String?,
+    val timestamp: Long,
+    val earphoneHistory: List<Triple<Int, Boolean, Long>>,
+    val rangeHours: Int = 3
+)
+
 interface WearBatteryRepository {
     suspend fun sendWatchBatteryToPhone(
         percent: Int,
@@ -19,6 +27,8 @@ interface WearBatteryRepository {
     )
 
     suspend fun getPhoneBatteryStatus(): PhoneBatteryStatus?
+
+    suspend fun getEarphoneBatteryStatus(): EarphoneBatteryStatus?
 
     suspend fun requestBatteryUpdate()
 }
