@@ -41,7 +41,7 @@
 | **#30** | イヤホン用コンプリケーションのアイコン表示不不備修復 | Fix | 2026/10/12 19:15 | 2026/10/12 19:25 | `[COMPLETED]` | `[NO]` | `[YES]` | [Plan](plans/20261012_fix_earphone_complication_icon.md) | [Walkthrough](walkthroughs/20261012_fix_earphone_complication_icon.md) | - |
 | **#31** | Wear OS タイル/コンプリケーション表示名称の Bluetooth Device への汎用化 | Fix | 2026/10/12 19:30 | 2026/10/12 19:35 | `[COMPLETED]` | `[NO]` | `[YES]` | [Plan](plans/20261012_rename_earphone_to_bluetooth_device.md) | [Walkthrough](walkthroughs/20261012_rename_earphone_to_bluetooth_device.md) | - |
 | **#32** | コンプリケーションおよびタイルの設定ラベル名称の一貫性・不整合修復 | Fix | 2026/10/12 19:40 | 2026/10/12 19:48 | `[COMPLETED]` | `[NO]` | `[YES]` | [Plan](plans/20261012_align_tile_and_complication_labels.md) | [Walkthrough](walkthroughs/20261012_align_tile_and_complication_labels.md) | - |
-| **#33** | イヤホン用コンプリケーション/タイルの DataChanged 時更新要求漏れ修復 | Fix | 2026/10/17 00:15 | - | `[IN_PROGRESS]` | `[NO]` | `[YES]` | [Plan](plans/20261017_fix_earphone_complication_update_trigger.md) | - | - |
+| **#33** | イヤホン用コンプリケーション/タイルの DataChanged 時更新要求漏れ修復 | Fix | 2026/10/17 00:15 | 2026/10/17 00:45 | `[COMPLETED]` | `[NO]` | `[YES]` | [Plan](plans/20261017_fix_earphone_complication_update_trigger.md) | [Walkthrough](walkthroughs/20261017_fix_earphone_complication_update_trigger.md) | - |
 
 ---
 

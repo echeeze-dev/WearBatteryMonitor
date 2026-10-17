@@ -7,6 +7,7 @@ import android.util.Log
 import android.content.ComponentName
 import androidx.wear.tiles.TileService
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import com.echeeze.wearbatterymonitor.complication.EarphoneComplicationService
 import com.echeeze.wearbatterymonitor.complication.MainComplicationService
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -29,9 +30,15 @@ class TileDataUpdateService : WearableListenerService() {
                 Log.d("TileDataUpdateService", "Requesting tile and complication update")
                 TileService.getUpdater(this)
                     .requestUpdate(PhoneBatteryTileService::class.java)
+                TileService.getUpdater(this)
+                    .requestUpdate(EarphoneBatteryTileService::class.java)
                 
                 ComplicationDataSourceUpdateRequester.create(this, 
                     ComponentName(this, MainComplicationService::class.java))
+                    .requestUpdateAll()
+
+                ComplicationDataSourceUpdateRequester.create(this, 
+                    ComponentName(this, EarphoneComplicationService::class.java))
                     .requestUpdateAll()
             }
         }
